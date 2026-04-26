@@ -10,6 +10,8 @@ All cuts are encoded with `shaper:cutType` attributes so the Shaper Origin CNC r
 Calculates equal-temperament fret positions and generates a full fretboard SVG ready to load into Shaper Origin.
 The SVG contains all cut information in Shaper-native attributes — you load the file, position it on your fretboard blank, and cut.
 
+![Fretboard Layout](screenshots/Screenshot1.jpg)
+
 ### Parameters
 
 **Instrument preset** — selects a named instrument (Classical Guitar, Electric Guitar 25.5″, Bass, Ukulele, Mandolin, Violin, …) and fills in scale length, fret count, and nut/12th-fret widths automatically. Any value can be overridden individually after selecting a preset.
@@ -145,6 +147,8 @@ Every parameter change is also broadcast over `BroadcastChannel` and `localStora
 
 Generates a Shaper Origin SVG for routing the underside wire channels and LED pockets of an addressable LED fretboard lighting system.
 The fretboard dimensions (scale length, fret count, nut width, 12th-fret width) and inlay layout (position, double markers, offset, inlay size) are synced automatically from the Fretboard Layout page.
+
+![Fretboard Lighting](screenshots/Screenshot2.jpg)
 
 ### Electrical Mode — Addressable LED Chain
 
