@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fretboard Lighting — Luthier Tools</title>
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap">
+
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #f5f5f5; display: flex; flex-direction: column; }
+    .sidenav li a { display: flex; align-items: center; gap: 10px; }
+    .sidenav .subheader { font-size: .72rem; color: #9e9e9e; padding: 8px 16px 2px; }
+
+    #breadcrumb-bar { flex-shrink: 0; background: #fff8e1; border-bottom: 1px solid #ffe0b2; padding: 3px 16px; font-size: .78rem; line-height: 24px; }
+    #breadcrumb-bar a { color: #e65100; }
+    #breadcrumb-bar .sep { color: #ffcc80; margin: 0 5px; }
+    #breadcrumb-bar .current { color: #bf360c; font-weight: 500; }
+
+    #app-layout { display: flex; flex: 1; min-height: 0; }
+
+    #left-panel {
+      width: 300px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      box-shadow: 2px 0 6px rgba(0,0,0,.12);
+      z-index: 1;
+    }
+    #left-scroll { flex: 1; overflow-y: auto; padding: 16px; }
+    #left-actions { flex-shrink: 0; border-top: 1px solid rgba(0,0,0,.1); background: #fff; }
+    #right-panel { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 16px; }
+    #svgContainer { overflow: hidden; }
+    #svgContainer svg { width: 100%; height: auto; display: block; }
+  </style>
+</head>
+<body>
+
+<!-- ── Side Navigation ───────────────────────────────────────── -->
+<ul id="slide-out" class="sidenav">
+  <li><div class="user-view" style="background:#e65100;padding:16px">
+    <p style="color:#fff;font-weight:500;margin:0;font-size:1rem">Luthier Tools</p>
+    <p style="color:#ffccbc;margin:0;font-size:.78rem">Shaper Origin Utilities</p>
+  </div></li>
+  <li><div class="subheader">Use Cases</div></li>
+  <li><a href="/"><i class="material-icons">straighten</i>Fretboard Layout</a></li>
+  <li class="active"><a href="/lighting"><i class="material-icons">lightbulb</i>Fretboard Lighting</a></li>
+  <li><div class="divider"></div></li>
+</ul>
+
+<!-- ── Navbar ───────────────────────────────────────────────── -->
+<nav style="background:#e65100">
+  <div class="nav-wrapper" style="padding:0 16px">
+    <a href="#" data-target="slide-out" class="sidenav-trigger">
+      <i class="material-icons">menu</i>
+    </a>
+    <a href="/lighting" class="brand-logo center" style="font-size:1.1rem">
+      <i class="material-icons" style="vertical-align:middle;margin-right:4px">lightbulb</i>
+      Fretboard Lighting
+    </a>
+  </div>
+</nav>
+
+<!-- ── Breadcrumb ────────────────────────────────────────────── -->
+<div id="breadcrumb-bar">
+  <a href="/">Luthier Tools</a>
+  <span class="sep">/</span>
+  <a href="/">Fretboard Layout</a>
+  <span class="sep">/</span>
+  <span class="current">Fretboard Lighting</span>
+</div>
+
+<!-- ── App layout ───────────────────────────────────────────── -->
+<div id="app-layout">
+
+  <!-- ── LEFT panel ───────────────────────────────────────── -->
+  <div id="left-panel">
+    <div id="left-scroll">
+
+      <!-- Truss Rod -->
+      <p style="font-weight:500;color:#e65100;font-size:.85rem;margin-bottom:10px">Truss Rod</p>
+      <div class="input-field">
+        <input id="trussRodWidth" type="number" value="6" min="0" max="12" step="0.5" class="validate">
+        <label for="trussRodWidth" class="active">Truss Rod Width (mm)</label>
+        <span class="helper-text">Channels route around this clearance zone</span>
+      </div>
+
+      <div class="divider" style="margin:0 0 14px"></div>
+
+      <!-- LED Wiring -->
+      <p style="font-weight:500;color:#e65100;font-size:.85rem;margin-bottom:10px">LED Wiring</p>
+
+      <div class="input-field">
+        <input id="channelWidth" type="number" value="1.2" min="0.5" max="5" step="0.1" class="validate">
+        <label for="channelWidth" class="active">Channel width (mm)</label>
+        <span class="helper-text">Slot width for wires</span>
+      </div>
+
+      <div class="input-field">
+        <select id="ledType">
+          <option value="ws2812b-2020">WS2812B-2020 (2.0 × 2.0 × 0.45 mm) — RGB addressable</option>
+          <option value="apa102-2020">APA102C-2020 (2.0 × 2.0 × 0.6 mm) — RGB SPI addressable</option>
+          <option value="sk6812-2020">SK6812-2020 (2.0 × 2.0 × 0.6 mm) — RGBW addressable</option>
+          <option value="0402-simple">0402 SMD LED (1.0 × 0.5 × 0.35 mm) — single colour</option>
+        </select>
+        <label>LED Type</label>
+      </div>
+
+      <div id="ledInfo" style="padding:8px 10px;background:#fff8e1;border-radius:4px;font-size:.73rem;color:#333;line-height:1.6;margin-bottom:12px"></div>
+
+    </div><!-- /left-scroll -->
+
+    <div id="left-actions">
+      <div style="padding:8px 12px">
+        <a id="downloadBtn"
+           class="btn deep-orange darken-3 waves-effect waves-light disabled"
+           style="width:100%;text-align:center;margin-bottom:6px"
+           onclick="downloadSvg()">
+          <i class="material-icons left">download</i>Download SVG
+        </a>
+      </div>
+    </div>
+  </div><!-- /left-panel -->
+
+  <!-- ── RIGHT panel ─────────────────────────────────────── -->
+  <div id="right-panel">
+
+    <div class="card">
+      <div class="card-content" style="padding:16px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <i class="material-icons tiny" style="color:#e65100">lightbulb</i>
+          <span style="font-weight:500;font-size:1rem">Channel Routing Preview</span>
+          <span id="previewSubtitle" style="font-size:.78rem;color:#9e9e9e;margin-left:4px"></span>
+        </div>
+
+        <div id="progressBar" class="progress orange lighten-4" style="display:none">
+          <div class="indeterminate orange darken-2"></div>
+        </div>
+        <div id="svgContainer" style="display:none"></div>
+        <div id="emptyState" style="text-align:center;padding:32px 0">
+          <i class="material-icons" style="font-size:56px;color:#ffcc80">lightbulb</i>
+          <p style="color:#ff8f00">Open <a href="/" style="color:#e65100">Fretboard Layout</a> to sync dimensions</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Channel summary -->
+    <div id="summaryCard" class="card" style="display:none">
+      <div class="card-content" style="padding:16px">
+        <span class="card-title" style="font-size:1rem;font-weight:500">Channel Summary</span>
+        <p id="summaryText" style="font-size:.85rem;color:#555"></p>
+      </div>
+    </div>
+
+    <!-- LED reference -->
+    <div class="card">
+      <div class="card-content" style="padding:16px">
+        <span class="card-title" style="font-size:1rem;font-weight:500">LED Reference</span>
+        <p style="font-size:.78rem;color:#555;margin-bottom:8px">
+          Recommended LEDs for embedding in a fretboard (pocket from underside, ~1–2 mm milling depth available):
+        </p>
+        <table class="striped" style="font-size:.76rem">
+          <thead>
+            <tr><th>Type</th><th>Size (mm)</th><th>Protocol</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>WS2812B-2020</b></td>
+              <td>2.0 × 2.0 × 0.45</td>
+              <td>NeoPixel (1-wire)</td>
+              <td>RGB, individually addressable, 5 V</td>
+            </tr>
+            <tr>
+              <td><b>APA102C-2020</b></td>
+              <td>2.0 × 2.0 × 0.6</td>
+              <td>SPI (2-wire)</td>
+              <td>RGB, faster protocol, 5 V</td>
+            </tr>
+            <tr>
+              <td><b>SK6812-2020</b></td>
+              <td>2.0 × 2.0 × 0.6</td>
+              <td>NeoPixel (1-wire)</td>
+              <td>RGBW variant available, 5 V</td>
+            </tr>
+            <tr>
+              <td><b>0402 SMD LED</b></td>
+              <td>1.0 × 0.5 × 0.35</td>
+              <td>Simple 2-wire</td>
+              <td>Single colour, smallest option, 2–3.5 V</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /right-panel -->
+</div><!-- /app-layout -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+<script th:src="@{/js/lighting.js(v=3)}"></script>
+
+</body>
+</html>

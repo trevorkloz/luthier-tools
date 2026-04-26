@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+backend/build/
+backend/.gradle/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Compiled classes / JARs
+*.class
+*.jar
+*.war
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
