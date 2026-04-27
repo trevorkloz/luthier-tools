@@ -112,7 +112,7 @@ async function loadInlayPresets() {
     if (!res.ok) throw new Error();
     inlayPresets = await res.json();
   } catch (_) {
-    inlayPresets = [{ id: 'circle', name: 'Circle', doubleOrientation: 'vertical' }];
+    inlayPresets = [{ id: 'circle', name: 'Circle' }];
   }
   const sel = document.getElementById('inlayPreset');
   inlayPresets.forEach(p => {
@@ -565,9 +565,9 @@ function stateSnapshot() {
     inlayShape:           currentInlayPresetId,
     inlaySize:            document.getElementById('inlaySize').value,
     inlayHeight:          document.getElementById('inlayHeight').value,
-    inlayPosition:           document.getElementById('inlayPosition').value,
+    inlayPosition:        inlayPositionValue,
     inlayDoubleOffset:       document.getElementById('inlayDoubleOffset').value,
-    inlayDoubleOrientation:  document.getElementById('inlayDoubleOrientation').value,
+    inlayDoubleOrientation:  inlayDoubleOrientationValue,
     inlayShrinkWidth:        document.getElementById('inlayShrinkWidth').value,
     inlayGrowHeight:      document.getElementById('inlayGrowHeight').value,
     inlayTrapezoid:       document.getElementById('inlayTrapezoid').value,

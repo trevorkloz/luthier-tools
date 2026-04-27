@@ -1,20 +1,22 @@
 package com.luthertools.fretcalculator.model
 
+import com.fasterxml.jackson.annotation.JsonValue
+
 data class FretRequest(
     val scaleLength: Double,
     val numberOfFrets: Int,
     val nutWidth: Double,
     val width12thFret: Double,
-    val unit: String = "mm",
+    val unit: Unit = Unit.MM,
     val showFretNumbers: Boolean = true,
     val showCenterLine: Boolean = true,
     val showWidthAnnotations: Boolean = true,
     val showInlays: Boolean = true,
     val doubleInlays: Boolean = true,
-    val inlayShape: String = "circle",
+    val inlayShape: String = InlayShape.CIRCLE.id,
     val inlaySize: Double = 6.0,
     val inlayHeight: Double = 4.0,
-    val inlayPosition: String = "center",
+    val inlayPosition: String = InlayPosition.CENTER.value,
     val inlayDoubleOffset: Double = 8.0,
     val inlayShrinkWidth: Double = 0.0,
     val inlayGrowHeight: Double = 0.0,
@@ -30,5 +32,5 @@ data class FretRequest(
     val showPinholes: Boolean = false,
     val tangWidth: Double = 0.6,
     val fretExtensionAmount: Double = 0.0,
-    val inlayDoubleOrientation: String = "vertical",
+    val inlayDoubleOrientation: InlayDoubleOrientation = InlayDoubleOrientation.VERTICAL,
 )
