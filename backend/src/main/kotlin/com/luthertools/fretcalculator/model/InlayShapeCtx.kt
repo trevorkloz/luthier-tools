@@ -19,4 +19,10 @@ class InlayShapeCtx(
     val centerY: Double,
     val cutPath: (String, String) -> String,
     val fretNumber: Int = 0,
+    // Custom polygon segments. Each entry is a flat list of normalized [0,1] coords:
+    //   [x, y]                       — first entry: start point (treated as 'M')
+    //   [x, y]                       — subsequent: line to (treated as 'L')
+    //   [cx, cy, x, y]               — quadratic Bezier (control + end, 'Q')
+    //   [c1x, c1y, c2x, c2y, x, y]   — cubic Bezier (two controls + end, 'C')
+    val customPath: List<List<Double>> = emptyList(),
 )

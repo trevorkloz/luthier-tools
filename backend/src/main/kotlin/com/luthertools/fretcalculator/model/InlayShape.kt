@@ -7,7 +7,8 @@ enum class InlayShape(val id: String) {
 
     CIRCLE("circle"),
     RECTANGLE("rectangle"),
-    DIAMOND("diamond");
+    DIAMOND("diamond"),
+    CUSTOM("custom");
 
     @JsonValue fun toValue() = id
 

@@ -34,4 +34,7 @@ data class FretRequest(
     val tangWidth: Double = 0.6,
     val fretExtensionAmount: Double = 0.0,
     val inlayDoubleOrientation: InlayDoubleOrientation = InlayDoubleOrientation.VERTICAL,
+    // Polygon points for InlayShape.CUSTOM, normalized to [0,1]² (x: left→right, y: top→bottom).
+    // Each entry is a 2-element list [x, y]. Empty list disables custom rendering.
+    val inlayCustomPath: List<List<Double>> = emptyList(),
 )

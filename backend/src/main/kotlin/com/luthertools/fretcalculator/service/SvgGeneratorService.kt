@@ -48,6 +48,7 @@ class SvgGeneratorService {
             InlayPreset.Circle,
             InlayPreset.Rectangle,
             InlayPreset.Diamond,
+            InlayPreset.Custom,
         )
     }
 
@@ -153,7 +154,15 @@ class SvgGeneratorService {
                     val scale1224H = if (inlayFret in doubleFrets) (1.0 - request.inlayShrinkHeight1224) else 1.0
                     val effectiveSize   = request.inlaySize   * scaleW * scale1224W
                     val effectiveHeight = request.inlayHeight * scaleH * scale1224H
-                    val effectiveInlayDoubleOffset = request.inlayDoubleOffset * scaleW
+                    // The pair offset is along the inlay's spread axis. For HORIZONTAL doubles
+                    // that axis runs along the fret direction (so it should shrink with fret spacing
+                    // toward the heel); for VERTICAL/STAGGERED it runs across the fretboard width,
+                    // which doesn't collapse the way fret spacing does — keep it unscaled there.
+                    val effectiveInlayDoubleOffset =
+                        if (request.inlayDoubleOrientation == InlayDoubleOrientation.HORIZONTAL)
+                            request.inlayDoubleOffset * scaleW
+                        else
+                            request.inlayDoubleOffset
 
                     val preset = INLAY_PRESETS.find { it.id == request.inlayShape } ?: INLAY_PRESETS.first()
                     val ctx = InlayShapeCtx(
@@ -175,6 +184,7 @@ class SvgGeneratorService {
                         centerY           = centerY,
                         cutPath           = cutFn,
                         fretNumber        = inlayFret,
+                        customPath        = request.inlayCustomPath,
                     )
                     for (element in preset.draw(ctx)) raw(element)
                 }
@@ -443,7 +453,10 @@ class SvgGeneratorService {
                 fretNumber = inlayFret,
                 effSize    = request.inlaySize   * scaleW * scale1224W,
                 effHeight  = request.inlayHeight * scaleH * scale1224H,
-                effOffset  = request.inlayDoubleOffset * scaleW,
+                effOffset  = if (request.inlayDoubleOrientation == InlayDoubleOrientation.HORIZONTAL)
+                                 request.inlayDoubleOffset * scaleW
+                             else
+                                 request.inlayDoubleOffset,
                 isDouble   = request.doubleInlays && inlayFret in doubleFrets,
             ))
         }
@@ -549,6 +562,7 @@ class SvgGeneratorService {
                     centerY                    = cellCy,
                     cutPath                    = sheetCut,
                     fretNumber                 = entry.second.first(),
+                    customPath                 = request.inlayCustomPath,
                 )
                 for (element in preset.draw(ctx)) raw(element)
             }

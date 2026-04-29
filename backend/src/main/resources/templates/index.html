@@ -226,6 +226,23 @@
                 <label>Inlay Type</label>
               </div>
 
+              <div id="customPathEditor" style="display:none;margin-bottom:14px">
+                <svg id="customPathCanvas" viewBox="0 0 100 100"
+                     style="width:100%;aspect-ratio:1;background:#fafafa;border:1px solid #cfd8dc;border-radius:3px;cursor:crosshair;display:block">
+                </svg>
+                <div style="display:flex;gap:4px;margin-top:4px;align-items:stretch">
+                  <button id="customPathModeBtn" onclick="customPathToggleMode()" type="button" title="Line segments"
+                          style="flex:1;padding:3px 0;background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center"></button>
+                  <button onclick="customPathRotateClick(event)" type="button" title="Rotate 15° (Shift = counter-clockwise)"
+                          style="flex:1;padding:3px 0;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center"><i class="material-icons" style="font-size:14px;line-height:14px">rotate_right</i></button>
+                  <button onclick="customPathClear()" type="button" title="Clear"
+                          style="flex:1;padding:3px 0;background:#fff;color:#c62828;border:1px solid #ffcdd2;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center"><i class="material-icons" style="font-size:14px;line-height:14px">delete</i></button>
+                </div>
+                <p style="font-size:.66rem;color:#9e9e9e;margin:6px 0 0;line-height:1.35">
+                  Click empty area to add a vertex (line or arc by mode). Click an edge to insert a vertex. Drag handles to reshape; <b style="color:#455a64">Shift-drag</b> to move; right-click to remove.
+                </p>
+              </div>
+
               <div class="input-field">
                 <select id="inlayPosition">
                   <option value="center" selected>Center</option>
