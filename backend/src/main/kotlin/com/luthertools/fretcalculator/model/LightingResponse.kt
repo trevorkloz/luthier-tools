@@ -4,6 +4,6 @@ data class LightingResponse(
     val svgContent: String,
     val channelCount: Int,
     val totalChannelLength: Double,
-    val unit: String,
+    val unit: Unit,
     val scaleLength: Double,
 )

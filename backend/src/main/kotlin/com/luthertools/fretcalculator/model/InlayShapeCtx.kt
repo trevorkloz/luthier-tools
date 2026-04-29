@@ -7,6 +7,7 @@ class InlayShapeCtx(
     val effectiveSize: Double,
     val effectiveHeight: Double,
     val trap: Double,
+    val parallelogram: Double,
     val edgePad: Double,
     val effectiveInlayDoubleOffset: Double,
     val isDouble: Boolean,
@@ -16,5 +17,6 @@ class InlayShapeCtx(
     val yTop: (Double) -> Double,
     val yBottom: (Double) -> Double,
     val centerY: Double,
-    val pocketPath: (String, String) -> String,
+    val cutPath: (String, String) -> String,
+    val fretNumber: Int = 0,
 )

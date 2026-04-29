@@ -7,7 +7,7 @@ enum class Unit(val label: String) {
     MM("mm"),
     INCH("inch");
 
-    @JsonValue fun toValue() = label
+    @JsonValue override fun toString() = label
 
     companion object {
         @JsonCreator @JvmStatic

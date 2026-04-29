@@ -2,21 +2,36 @@
 
 const API_URL     = '/api/frets/calculate';
 const STORAGE_KEY = 'fretCalcParams';
+const MM_PER_IN   = 25.4;
+
+// Dimension fields that need unit conversion (all stored/sent in mm)
+const DIM_FIELDS = [
+  { id: 'scaleLength',         mmMin: 100,   mmMax: 2000,  mmStep: 0.5,  inStep: 0.02  },
+  { id: 'nutWidth',            mmMin: 10,    mmMax: null,  mmStep: 0.5,  inStep: 0.02  },
+  { id: 'width12thFret',       mmMin: 10,    mmMax: null,  mmStep: 0.5,  inStep: 0.02  },
+  { id: 'radiusValue',         mmMin: 50,    mmMax: 5000,  mmStep: 0.5,  inStep: 0.05  },
+  { id: 'nutSlotWidth',        mmMin: 0.5,   mmMax: 15,    mmStep: 0.5,  inStep: 0.02  },
+  { id: 'nutSlotDistance',     mmMin: -20,   mmMax: 0,     mmStep: 0.5,  inStep: 0.02  },
+  { id: 'tangWidth',           mmMin: 0.1,   mmMax: 3.0,   mmStep: 0.01, inStep: 0.001 },
+  { id: 'fretExtensionAmount', mmMin: -10,   mmMax: 20,    mmStep: 0.5,  inStep: 0.02  },
+];
+// inlaySize, inlayHeight, inlayDoubleOffset are mm-fixed range sliders — not in DIM_FIELDS.
 
 const PRESETS = [
-  { name: 'Classical Guitar (650 mm)',       scaleLength: 650, nutWidth: 52, width12thFret: 60, numberOfFrets: 19, unit: 'mm', radius: 0   },
-  { name: 'Electric Guitar 25.5" (648 mm)',  scaleLength: 648, nutWidth: 42, width12thFret: 52, numberOfFrets: 22, unit: 'mm', radius: 184 },
-  { name: 'Electric Guitar 24.75" (628 mm)', scaleLength: 628, nutWidth: 42, width12thFret: 52, numberOfFrets: 22, unit: 'mm', radius: 305 },
-  { name: 'Electric Guitar 25" (635 mm)',    scaleLength: 635, nutWidth: 42, width12thFret: 52, numberOfFrets: 22, unit: 'mm', radius: 254 },
-  { name: 'Bass Guitar 34" (864 mm)',        scaleLength: 864, nutWidth: 42, width12thFret: 55, numberOfFrets: 20, unit: 'mm', radius: 305 },
-  { name: 'Bass Guitar 30" (762 mm)',        scaleLength: 762, nutWidth: 40, width12thFret: 53, numberOfFrets: 20, unit: 'mm', radius: 254 },
-  { name: 'Ukulele Soprano (345 mm)',        scaleLength: 345, nutWidth: 35, width12thFret: 42, numberOfFrets: 14, unit: 'mm', radius: 0   },
-  { name: 'Mandolin (350 mm)',               scaleLength: 350, nutWidth: 34, width12thFret: 40, numberOfFrets: 17, unit: 'mm', radius: 0   },
-  { name: 'Violin (330 mm)',                 scaleLength: 330, nutWidth: 24, width12thFret: 30, numberOfFrets: 0,  unit: 'mm', radius: 0   },
+  { name: 'Classical Guitar (650 mm)',       scaleLength: 650, nutWidth: 52, width12thFret: 60, numberOfFrets: 19, radius: 0   },
+  { name: 'Electric Guitar 25.5" (648 mm)',  scaleLength: 648, nutWidth: 42, width12thFret: 52, numberOfFrets: 22, radius: 184 },
+  { name: 'Electric Guitar 24.75" (628 mm)', scaleLength: 628, nutWidth: 42, width12thFret: 52, numberOfFrets: 22, radius: 305 },
+  { name: 'Electric Guitar 25" (635 mm)',    scaleLength: 635, nutWidth: 42, width12thFret: 52, numberOfFrets: 22, radius: 254 },
+  { name: 'Bass Guitar 34" (864 mm)',        scaleLength: 864, nutWidth: 42, width12thFret: 55, numberOfFrets: 20, radius: 305 },
+  { name: 'Bass Guitar 30" (762 mm)',        scaleLength: 762, nutWidth: 40, width12thFret: 53, numberOfFrets: 20, radius: 254 },
+  { name: 'Ukulele Soprano (345 mm)',        scaleLength: 345, nutWidth: 35, width12thFret: 42, numberOfFrets: 14, radius: 0   },
+  { name: 'Mandolin (350 mm)',               scaleLength: 350, nutWidth: 34, width12thFret: 40, numberOfFrets: 17, radius: 0   },
+  { name: 'Violin (330 mm)',                 scaleLength: 330, nutWidth: 24, width12thFret: 30, numberOfFrets: 0,  radius: 0   },
 ];
 
 let lastResponse = null;
 let debounceTimer = null;
+let prevUnit = 'mm';
 
 let currentInlayPresetId = 'circle';
 let inlayPresets         = [];
@@ -50,8 +65,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadInlayPresets();
   populatePresets();
   M.Sidenav.init(document.querySelectorAll('.sidenav'));
-  M.Collapsible.init(document.getElementById('inputSections'), { accordion: false });
+  M.Collapsible.init(document.getElementById('inputSections'), {
+    accordion: true,
+    onOpenEnd: saveState,
+    onCloseEnd: saveState,
+  });
   M.FormSelect.init(document.querySelectorAll('select'));
+  M.Dropdown.init(document.querySelectorAll('.dropdown-trigger'), {
+    constrainWidth: false,
+    coverTrigger: false,
+    alignment: 'left',
+  });
 
   restoreState();
   M.updateTextFields();
@@ -62,14 +86,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     el.addEventListener('input', scheduleCalculate);
   });
 
-  bindSlider('inlayShrinkWidth', 'inlayShrinkWidthVal');
-  bindSlider('inlayGrowHeight',  'inlayGrowHeightVal');
-  bindSlider('inlayTrapezoid',   'inlayTrapezoidVal');
+  bindDimSlider('inlaySize',          'inlaySizeVal');
+  bindDimSlider('inlayHeight',        'inlayHeightVal');
+  bindDimSlider('inlayDoubleOffset',  'inlayDoubleOffsetVal');
+  bindSlider('inlayShrinkWidth1224',  'inlayShrinkWidth1224Val');
+  bindSlider('inlayShrinkHeight1224', 'inlayShrinkHeight1224Val');
+  bindSlider('inlayShrinkWidth',    'inlayShrinkWidthVal');
+  bindSlider('inlayGrowHeight',     'inlayGrowHeightVal');
+  bindSlider('inlayTrapezoid',      'inlayTrapezoidVal');
+  bindSlider('inlayParallelogram',  'inlayParallelogramVal');
+  snapToZeroOnDblClick('inlayTrapezoid',     'inlayTrapezoidVal');
+  snapToZeroOnDblClick('inlayParallelogram', 'inlayParallelogramVal');
+  refreshDimSliderDisplays();
 
-  document.getElementById('unit').addEventListener('change', () => {
-    updateUnitHints();
-    scheduleCalculate();
-  });
+  document.getElementById('unit').addEventListener('change', onUnitSwitch);
   document.getElementById('preset').addEventListener('change', applyPreset);
 
   ['showFretNumbers','showCenterLine','showWidthAnnotations',
@@ -79,8 +109,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('radiusPreset').addEventListener('change', () => {
-    const v = document.getElementById('radiusPreset').value;
-    if (v !== '') { document.getElementById('radiusValue').value = v; M.updateTextFields(); }
+    const mmVal = document.getElementById('radiusPreset').value;
+    if (mmVal !== '') {
+      const unit = document.getElementById('unit').value;
+      const displayVal = unit === 'inch'
+        ? (parseFloat(mmVal) / MM_PER_IN).toFixed(4)
+        : mmVal;
+      document.getElementById('radiusValue').value = displayVal;
+      M.updateTextFields();
+    }
     scheduleCalculate();
   });
 
@@ -92,6 +129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('inlayPosition').addEventListener('change', scheduleCalculate);
   document.getElementById('inlayDoubleOrientation').addEventListener('change', scheduleCalculate);
 
+  saveState();
   calculate();
 });
 
@@ -128,33 +166,128 @@ function applyPreset() {
   const idx = parseInt(document.getElementById('preset').value, 10);
   if (isNaN(idx)) return;
   const p = PRESETS[idx];
-  document.getElementById('scaleLength').value   = p.scaleLength;
+  const unit = document.getElementById('unit').value;
+  const fromMm = v => unit === 'inch' ? (v / MM_PER_IN).toFixed(4) : v;
+  document.getElementById('scaleLength').value   = fromMm(p.scaleLength);
   document.getElementById('numberOfFrets').value = p.numberOfFrets;
-  document.getElementById('nutWidth').value       = p.nutWidth;
-  document.getElementById('width12thFret').value  = p.width12thFret;
-  const unitEl = document.getElementById('unit');
-  unitEl.value = p.unit;
-  M.FormSelect.init(unitEl);
+  document.getElementById('nutWidth').value       = fromMm(p.nutWidth);
+  document.getElementById('width12thFret').value  = fromMm(p.width12thFret);
   if (p.radius !== undefined) {
-    document.getElementById('radiusValue').value = p.radius;
+    document.getElementById('radiusValue').value = fromMm(p.radius);
     const rpEl = document.getElementById('radiusPreset');
     rpEl.value = String(p.radius);
     M.FormSelect.init(rpEl);
   }
-  updateUnitHints();
   M.updateTextFields();
   calculate();
 }
 
-function updateUnitHints() {
+// ── Unit switching ────────────────────────────────────────────
+function onUnitSwitch() {
   const unit = document.getElementById('unit').value;
-  document.querySelectorAll('.unit-hint').forEach(el => el.textContent = unit);
+  if (unit === prevUnit) return;
+  const toIn = unit === 'inch';
+  DIM_FIELDS.forEach(({ id }) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const v = parseFloat(el.value);
+    if (!isNaN(v)) {
+      el.value = toIn ? (v / MM_PER_IN).toFixed(4) : (v * MM_PER_IN).toFixed(2);
+    }
+  });
+  updateInputConstraints(unit);
+  prevUnit = unit;
+  updateUnitHints();
+  refreshDimSliderDisplays();
+  M.updateTextFields();
+  scheduleCalculate();
 }
 
-// ── Slider helper ─────────────────────────────────────────────
+function updateInputConstraints(unit) {
+  const toIn = unit === 'inch';
+  DIM_FIELDS.forEach(({ id, mmMin, mmMax, mmStep, inStep }) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.min  = mmMin != null ? (toIn ? (mmMin / MM_PER_IN).toFixed(4) : mmMin) : '';
+    el.max  = mmMax != null ? (toIn ? (mmMax / MM_PER_IN).toFixed(4) : mmMax) : '';
+    el.step = toIn ? inStep : mmStep;
+  });
+}
+
+function updateUnitHints() {
+  const unit = document.getElementById('unit').value;
+  const label = unit === 'inch' ? 'in' : 'mm';
+  document.querySelectorAll('.unit-hint').forEach(el => el.textContent = label);
+  document.querySelectorAll('.range-hint').forEach(el => {
+    el.textContent = unit === 'inch' ? el.dataset.inch : el.dataset.mm;
+  });
+}
+
+// ── Slider helpers ────────────────────────────────────────────
 function bindSlider(id, valId) {
   const el = document.getElementById(id), valEl = document.getElementById(valId);
   el.addEventListener('input', () => { valEl.textContent = parseFloat(el.value).toFixed(2); scheduleCalculate(); });
+}
+
+function toggleInlayGroup(header) {
+  const body = header.nextElementSibling;
+  const icon = header.querySelector('.material-icons');
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  icon.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
+  saveState();
+}
+
+function getAccordionActiveIndex() {
+  const items = document.querySelectorAll('#inputSections > li');
+  for (let i = 0; i < items.length; i++) if (items[i].classList.contains('active')) return i;
+  return -1;
+}
+
+function getInlayGroupsState() {
+  const state = {};
+  document.querySelectorAll('[onclick^="toggleInlayGroup"]').forEach(h => {
+    const span = h.querySelector('span');
+    const body = h.nextElementSibling;
+    if (span && body) state[span.textContent.trim()] = body.style.display !== 'none';
+  });
+  return state;
+}
+
+function matchInlaySlider(id, valId, value) {
+  document.getElementById(id).value = value;
+  document.getElementById(valId).textContent = parseFloat(value).toFixed(2);
+  scheduleCalculate();
+}
+
+function snapToZeroOnDblClick(id, valId) {
+  const el = document.getElementById(id), valEl = document.getElementById(valId);
+  el.addEventListener('dblclick', () => {
+    el.value = 0;
+    valEl.textContent = '0.00';
+    scheduleCalculate();
+  });
+}
+
+function bindDimSlider(id, valId) {
+  const el = document.getElementById(id), valEl = document.getElementById(valId);
+  el.addEventListener('input', () => {
+    const unit = document.getElementById('unit').value;
+    const mm = parseFloat(el.value);
+    valEl.textContent = unit === 'inch' ? (mm / MM_PER_IN).toFixed(3) + ' in' : mm.toFixed(1) + ' mm';
+    scheduleCalculate();
+  });
+}
+
+function refreshDimSliderDisplays() {
+  const unit = document.getElementById('unit').value;
+  [['inlaySize', 'inlaySizeVal'], ['inlayHeight', 'inlayHeightVal'], ['inlayDoubleOffset', 'inlayDoubleOffsetVal']].forEach(([id, valId]) => {
+    const el = document.getElementById(id), valEl = document.getElementById(valId);
+    if (!el || !valEl) return;
+    const mm = parseFloat(el.value);
+    if (isNaN(mm)) return;
+    valEl.textContent = unit === 'inch' ? (mm / MM_PER_IN).toFixed(3) + ' in' : mm.toFixed(1) + ' mm';
+  });
 }
 
 // ── Calculation ───────────────────────────────────────────────
@@ -181,7 +314,6 @@ async function calculate() {
     renderPreview(data);
     renderTable(data);
     document.getElementById('downloadBtn').classList.remove('disabled');
-    document.getElementById('downloadPdfBtn').classList.remove('disabled');
   } catch (e) {
     M.toast({ html: 'Cannot reach backend — make sure Spring Boot is running on port 8080.', displayLength: 4000 });
   } finally {
@@ -189,14 +321,17 @@ async function calculate() {
   }
 }
 
+// Always sends mm to backend; converts from display unit if needed.
 function buildRequest() {
+  const unit = document.getElementById('unit').value;
+  const toMm = v => unit === 'inch' ? v * MM_PER_IN : v;
   const presetIdx = parseInt(document.getElementById('preset').value, 10);
   return {
-    scaleLength:          parseFloat(document.getElementById('scaleLength').value),
+    scaleLength:          toMm(parseFloat(document.getElementById('scaleLength').value)),
     numberOfFrets:        parseInt(document.getElementById('numberOfFrets').value, 10),
-    nutWidth:             parseFloat(document.getElementById('nutWidth').value),
-    width12thFret:        parseFloat(document.getElementById('width12thFret').value),
-    unit:                 document.getElementById('unit').value,
+    nutWidth:             toMm(parseFloat(document.getElementById('nutWidth').value)),
+    width12thFret:        toMm(parseFloat(document.getElementById('width12thFret').value)),
+    unit:                 'mm',
     showFretNumbers:      document.getElementById('showFretNumbers').checked,
     showCenterLine:       document.getElementById('showCenterLine').checked,
     showWidthAnnotations: document.getElementById('showWidthAnnotations').checked,
@@ -205,23 +340,26 @@ function buildRequest() {
     showBoundingBox:      document.getElementById('showBoundingBox').checked,
     label:                isNaN(presetIdx) ? '' : PRESETS[presetIdx].name,
     showRadius:           document.getElementById('showRadius').checked,
-    radiusValue:          parseFloat(document.getElementById('radiusValue').value),
+    radiusValue:          toMm(parseFloat(document.getElementById('radiusValue').value)),
     radiusSteps:          parseInt(document.getElementById('radiusSteps').value, 10),
     showNutSlot:          document.getElementById('showNutSlot').checked,
-    nutSlotWidth:         parseFloat(document.getElementById('nutSlotWidth').value),
-    nutSlotDistance:      parseFloat(document.getElementById('nutSlotDistance').value),
+    nutSlotWidth:         toMm(parseFloat(document.getElementById('nutSlotWidth').value)),
+    nutSlotDistance:      toMm(parseFloat(document.getElementById('nutSlotDistance').value)),
     showPinholes:         document.getElementById('showPinholes').checked,
-    tangWidth:            parseFloat(document.getElementById('tangWidth').value),
-    fretExtensionAmount:  parseFloat(document.getElementById('fretExtensionAmount').value),
+    tangWidth:            toMm(parseFloat(document.getElementById('tangWidth').value)),
+    fretExtensionAmount:  toMm(parseFloat(document.getElementById('fretExtensionAmount').value)),
     inlayShape:           currentInlayPresetId,
     inlaySize:            parseFloat(document.getElementById('inlaySize').value),
     inlayHeight:          parseFloat(document.getElementById('inlayHeight').value),
     inlayPosition:           document.getElementById('inlayPosition').value,
     inlayDoubleOffset:       parseFloat(document.getElementById('inlayDoubleOffset').value),
     inlayDoubleOrientation:  document.getElementById('inlayDoubleOrientation').value,
+    inlayShrinkWidth1224:    parseFloat(document.getElementById('inlayShrinkWidth1224').value),
+    inlayShrinkHeight1224:   parseFloat(document.getElementById('inlayShrinkHeight1224').value),
     inlayShrinkWidth:        parseFloat(document.getElementById('inlayShrinkWidth').value),
     inlayGrowHeight:      parseFloat(document.getElementById('inlayGrowHeight').value),
     inlayTrapezoid:       parseFloat(document.getElementById('inlayTrapezoid').value) / 50,
+    inlayParallelogram:   parseFloat(document.getElementById('inlayParallelogram').value) / 50,
   };
 }
 
@@ -235,40 +373,67 @@ function isValid(req) {
 // ── Rendering ─────────────────────────────────────────────────
 function renderPreview(data) {
   const container = document.getElementById('svgContainer');
-  // Strip absolute mm dimensions so CSS width:100%/height:auto controls sizing via viewBox ratio.
-  // Without this, the browser may briefly apply the intrinsic mm size (~2500px wide) causing layout freeze.
   const svgStr = data.svgContent
     .replace(/ width="[^"]*mm"/, '')
     .replace(/ height="[^"]*mm"/, '');
   container.innerHTML = svgStr;
   container.style.display = '';
   document.getElementById('emptyState').style.display = 'none';
-  document.getElementById('previewSubtitle').textContent =
-    `Scale: ${data.scaleLength} ${data.unit}  ·  ${data.fretPositions.length} frets`;
 }
 
 function renderTable(data) {
   const card = document.getElementById('tableCard');
-  document.getElementById('colNut').textContent   = `Distance from Nut (${data.unit})`;
-  document.getElementById('colSpace').textContent = `Slot Spacing (${data.unit})`;
+  const unit = document.getElementById('unit').value;
+  const unitLabel = unit === 'inch' ? 'in' : 'mm';
+  const conv = v => unit === 'inch' ? v / MM_PER_IN : v;
+  document.getElementById('colNut').textContent   = `Distance from Nut (${unitLabel})`;
+  document.getElementById('colSpace').textContent = `Slot Spacing (${unitLabel})`;
   if (data.fretPositions.length === 0) { card.style.display = 'none'; return; }
   document.getElementById('fretTableBody').innerHTML = data.fretPositions.map(fp => `
     <tr>
       <td>${fp.fretNumber}</td>
-      <td>${fp.distanceFromNut.toFixed(4)}</td>
-      <td>${fp.distanceFromPreviousFret.toFixed(4)}</td>
+      <td>${conv(fp.distanceFromNut).toFixed(4)}</td>
+      <td>${conv(fp.distanceFromPreviousFret).toFixed(4)}</td>
     </tr>`).join('');
   card.style.display = '';
 }
 
 // ── Download SVG ──────────────────────────────────────────────
+// Embed the current configuration code into the root <svg> as a data attribute,
+// a <desc> element, AND a visible <text> at the bottom edge so the export
+// is fully reproducible and the code is human-readable on the rendered SVG.
+function embedConfigInSvg(svgStr) {
+  const code = encodeConfig(stateSnapshot());
+  const vbMatch = svgStr.match(/viewBox="([\d.\-\s]+)"/);
+  let textElement = '';
+  if (vbMatch) {
+    const parts = vbMatch[1].trim().split(/\s+/).map(parseFloat);
+    if (parts.length === 4) {
+      const [vx, vy, vw, vh] = parts;
+      const tx = vx + vw / 2.0;
+      const ty = vy + vh - 1.0;
+      textElement =
+        `<text x="${tx}" y="${ty}" font-size="2.0" fill="#9e9e9e" ` +
+        `text-anchor="middle" font-family="sans-serif">config: ${code}</text>`;
+    }
+  }
+  return svgStr.replace(/(<svg\b)([^>]*)(>)/,
+    (_, open, attrs, close) =>
+      `${open}${attrs} data-config="${code}"${close}<desc>config:${code}</desc>${textElement}`);
+}
+
 function downloadSvg() {
   if (!lastResponse) return;
-  const blob = new Blob([lastResponse.svgContent], { type: 'image/svg+xml;charset=utf-8' });
+  const unit = document.getElementById('unit').value;
+  const scaleDisplay = unit === 'inch'
+    ? (lastResponse.scaleLength / MM_PER_IN).toFixed(2)
+    : lastResponse.scaleLength;
+  const unitLabel = unit === 'inch' ? 'in' : 'mm';
+  const blob = new Blob([embedConfigInSvg(lastResponse.svgContent)], { type: 'image/svg+xml;charset=utf-8' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href = url;
-  a.download = `fretboard-${lastResponse.scaleLength}${lastResponse.unit}-${lastResponse.fretPositions.length}frets.svg`;
+  a.download = `fretboard-${scaleDisplay}${unitLabel}-${lastResponse.fretPositions.length}frets.svg`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -280,18 +445,15 @@ async function downloadPdf() {
   const { jsPDF } = window.jspdf;
   const margin = 10, pageW = 297, pageH = 210, usableW = pageW - 2 * margin;
 
-  // Read SVG dimensions from viewBox (width/height attrs are stripped for display stability).
   const svgEl = document.querySelector('#svgContainer svg');
   const vb    = svgEl?.getAttribute('viewBox')?.split(/\s+/);
-  const svgW  = vb ? parseFloat(vb[2]) : 200;  // mm (viewBox units == mm)
+  const svgW  = vb ? parseFloat(vb[2]) : 200;
   const svgH  = vb ? parseFloat(vb[3]) : 100;
   const aspect = svgW / svgH;
 
-  // Rasterize SVG at ~150 dpi into usableW mm
   const pxW = Math.round(usableW * (150 / 25.4));
   const pxH = Math.round(pxW / aspect);
 
-  // Override mm dimensions with px so the browser renders at the exact target size
   const svgStr = lastResponse.svgContent
     .replace(/(\swidth=")[0-9.]+mm"/, `$1${pxW}"`)
     .replace(/(\sheight=")[0-9.]+mm"/, `$1${pxH}"`);
@@ -321,11 +483,14 @@ async function downloadPdf() {
     return;
   }
 
+  const displayUnit = document.getElementById('unit').value;
+  const unitLabel   = displayUnit === 'inch' ? 'in' : 'mm';
+  const conv        = v => displayUnit === 'inch' ? v / MM_PER_IN : v;
+
   const doc    = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const scaledH = usableW / aspect;
   let curY = margin;
 
-  // Title
   const presetIdx = parseInt(document.getElementById('preset').value, 10);
   const title = isNaN(presetIdx) ? 'Custom Fretboard' : PRESETS[presetIdx].name;
   doc.setFontSize(13);
@@ -340,11 +505,11 @@ async function downloadPdf() {
     if (curY + 30 > pageH - margin) { doc.addPage(); curY = margin; }
     doc.autoTable({
       startY:     curY,
-      head:       [['Fret #', `Distance from Nut (${lastResponse.unit})`, `Slot Spacing (${lastResponse.unit})`]],
+      head:       [['Fret #', `Distance from Nut (${unitLabel})`, `Slot Spacing (${unitLabel})`]],
       body:       lastResponse.fretPositions.map(fp => [
                     fp.fretNumber,
-                    fp.distanceFromNut.toFixed(4),
-                    fp.distanceFromPreviousFret.toFixed(4),
+                    conv(fp.distanceFromNut).toFixed(4),
+                    conv(fp.distanceFromPreviousFret).toFixed(4),
                   ]),
       styles:     { fontSize: 8, cellPadding: 1.5 },
       headStyles: { fillColor: [2, 119, 189] },
@@ -353,22 +518,22 @@ async function downloadPdf() {
     curY = doc.lastAutoTable.finalY + 6;
   }
 
-  // Radius contour table (when enabled)
+  // Radius contour table (always in mm — buildRequest sends mm)
   const radiusOn = document.getElementById('showRadius').checked;
-  const R        = parseFloat(document.getElementById('radiusValue').value);
-  const N        = parseInt(document.getElementById('radiusSteps').value, 10);
+  const req      = buildRequest();
+  const R        = req.radiusValue;
+  const N        = req.radiusSteps;
   if (radiusOn && R > 0 && N >= 2) {
-    const req         = buildRequest();
-    const pos12       = req.scaleLength / 2;
-    const widthAtEnd  = req.nutWidth + (req.width12thFret - req.nutWidth) * req.scaleLength / pos12;
-    const halfHeel    = widthAtEnd / 2;
-    const radiusBody  = [];
+    const pos12      = req.scaleLength / 2;
+    const widthAtEnd = req.nutWidth + (req.width12thFret - req.nutWidth) * req.scaleLength / pos12;
+    const halfHeel   = widthAtEnd / 2;
+    const radiusBody = [];
     for (let k = 1; k <= N; k++) {
-      const fracO  = k / N;
-      const fracI  = (k - 1) / N;
-      const yI     = (fracI * halfHeel).toFixed(2);
-      const yO     = (fracO * halfHeel).toFixed(2);
-      const depth  = (R - Math.sqrt(R * R - (fracO * halfHeel) ** 2)).toFixed(3);
+      const fracO = k / N;
+      const fracI = (k - 1) / N;
+      const yI    = (fracI * halfHeel).toFixed(2);
+      const yO    = (fracO * halfHeel).toFixed(2);
+      const depth = (R - Math.sqrt(R * R - (fracO * halfHeel) ** 2)).toFixed(3);
       radiusBody.push([`Zone ${k}`, `${yI} – ${yO} mm from centre`, `${depth} mm`]);
     }
     if (curY + 30 > pageH - margin) { doc.addPage(); curY = margin; }
@@ -386,24 +551,21 @@ async function downloadPdf() {
     });
     curY = doc.lastAutoTable.finalY + 6;
 
-    // Inlay depth suggestion when inlays are also active
-    if (buildRequest().showInlays) {
-      const pos12      = buildRequest().scaleLength / 2;
-      const widthEnd   = buildRequest().nutWidth + (buildRequest().width12thFret - buildRequest().nutWidth) * buildRequest().scaleLength / pos12;
-      const halfHeel   = widthEnd / 2;
-      const edgeOff    = (R - Math.sqrt(R * R - halfHeel * halfHeel)).toFixed(3);
+    if (req.showInlays) {
+      const halfHeelI  = widthAtEnd / 2;
+      const edgeOff    = (R - Math.sqrt(R * R - halfHeelI * halfHeelI)).toFixed(3);
       if (curY + 24 > pageH - margin) { doc.addPage(); curY = margin; }
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.setTextColor(80, 80, 80);
       const noteLines = doc.splitTextToSize(
-        `Inlay pocket depth with radius R = ${R} mm: ` +
+        `Inlay pocket depth with radius R = ${R} mm: ` +
         `The fretboard surface curves away from the centre after radiusing. ` +
-        `Minimum finished inlay depth from the radiused surface: 2.5 mm. ` +
+        `Minimum finished inlay depth from the radiused surface: 2.5 mm. ` +
         `For centre-positioned markers no correction is needed. ` +
         `For edge-positioned markers add the radius offset at that position. ` +
-        `Maximum surface offset at fretboard edge: ${edgeOff} mm. ` +
-        `Required pre-radius pocket depth (edge marker): ${(2.5 + parseFloat(edgeOff)).toFixed(3)} mm.`,
+        `Maximum surface offset at fretboard edge: ${edgeOff} mm. ` +
+        `Required pre-radius pocket depth (edge marker): ${(2.5 + parseFloat(edgeOff)).toFixed(3)} mm.`,
         pageW - 2 * margin
       );
       doc.text(noteLines, margin, curY + 4);
@@ -411,14 +573,81 @@ async function downloadPdf() {
     }
   }
 
-  doc.save(`fretboard-${lastResponse.scaleLength}${lastResponse.unit}.pdf`);
+  const configCode = encodeConfig(stateSnapshot());
+  const pageCount  = doc.internal.getNumberOfPages();
+  doc.setFontSize(7);
+  doc.setTextColor(150, 150, 150);
+  for (let p = 1; p <= pageCount; p++) {
+    doc.setPage(p);
+    doc.text(`Config: ${configCode}`, margin, pageH - margin + 4);
+  }
+
+  const scaleDisplay = displayUnit === 'inch'
+    ? (lastResponse.scaleLength / MM_PER_IN).toFixed(2)
+    : lastResponse.scaleLength;
+  doc.save(`fretboard-${scaleDisplay}${unitLabel}.pdf`);
 }
 
 // ── UI helpers ────────────────────────────────────────────────
 function updateShapeFields() {
-  const isRect = currentInlayPresetId === 'rectangle';
-  document.getElementById('inlayHeightField').style.display    = isRect ? '' : 'none';
-  document.getElementById('inlayTrapezoidField').style.display = isRect ? '' : 'none';
+  const id     = currentInlayPresetId;
+  const isRect = id === 'rectangle';
+  const heightLabels = {
+    rectangle:    'Height',
+    star:         'Inner diameter (0 = auto 40%)',
+    arrow:        'Head width',
+    'shark-fin':  'Fin height',
+  };
+  const showHeight = id in heightLabels;
+  document.getElementById('inlayHeightField').style.display       = showHeight ? 'flex' : 'none';
+  document.getElementById('inlayDeformationGroup').style.display  = isRect ? '' : 'none';
+  const labelEl = document.getElementById('inlayHeightLabel');
+  if (labelEl) labelEl.textContent = heightLabels[id] || 'Height';
+}
+
+function downloadLayerSvg(mode) {
+  if (!lastResponse) return;
+  const unit      = document.getElementById('unit').value;
+  const scaleDisp = unit === 'inch' ? (lastResponse.scaleLength / MM_PER_IN).toFixed(2) : lastResponse.scaleLength;
+  const unitLabel = unit === 'inch' ? 'in' : 'mm';
+
+  if (mode === 'inlays') {
+    const req = buildRequest();
+    fetch('/api/frets/inlays-sheet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    }).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.text();
+    }).then(svgStr => {
+      const blob = new Blob([embedConfigInSvg(svgStr)], { type: 'image/svg+xml;charset=utf-8' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `inlays-sheet-${scaleDisp}${unitLabel}.svg`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }).catch(() => {
+      M.toast({ html: 'Failed to generate inlays sheet.', displayLength: 3000 });
+    });
+    return;
+  }
+
+  // mode === 'frets': strip the inlays group from the full SVG
+  const parser    = new DOMParser();
+  const svgDoc    = parser.parseFromString(lastResponse.svgContent, 'image/svg+xml');
+  const svgEl     = svgDoc.documentElement;
+  const inlaysGrp = svgEl.querySelector('#layer-inlays');
+  if (inlaysGrp) inlaysGrp.parentNode.removeChild(inlaysGrp);
+  const svgStr = new XMLSerializer().serializeToString(svgDoc);
+  const blob   = new Blob([embedConfigInSvg(svgStr)], { type: 'image/svg+xml;charset=utf-8' });
+  const url    = URL.createObjectURL(blob);
+  const a      = document.createElement('a');
+  a.href       = url;
+  a.download   = `fretboard-${scaleDisp}${unitLabel}-frets.svg`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function setLoading(loading) {
@@ -426,18 +655,41 @@ function setLoading(loading) {
 }
 
 // ── Config code ───────────────────────────────────────────────
-// 26 lowercase alphanumeric characters (base-36 BigInt, 130 bits packed)
-// Fields in pack order:
+// 32 uppercase alphanumeric characters (base-36):
+//   - 28 data chars: 143 bits packed via BigInt
+//   - 4 hash chars: polynomial hash over the data (~20.7 bits, ~0.06% false-positive rate)
+// Decoder verifies the hash directly, and on mismatch brute-force tries every
+// single-character substitution (32 positions × 35 alternates = 1120 candidates),
+// so any one-character corruption (typo, OCR slip, transmission error) is corrected.
+// All dimension values stored in mm regardless of display unit.
+// Field bit-widths in pack order:
 //   scaleLength(12) numberOfFrets(6) nutWidth(8) width12thFret(8) unit(1)
 //   showFretNumbers(1) showCenterLine(1) showWidthAnnotations(1)
-//   showInlays(1) doubleInlays(1) doubleOrientation(1) showBoundingBox(1)
-//   inlayShape(3) inlaySize(6) inlayHeight(6) inlayPosition(2)
-//   inlayDoubleOffset(6) inlayShrinkWidth(4) inlayGrowHeight(7) inlayTrapezoid(6)
-//   showRadius(1) radiusValue(12) radiusSteps(4)
+//   showInlays(1) doubleInlays(1) doubleOrientation(2) showBoundingBox(1)
+//   inlayShape(3) inlaySize(7) inlayHeight(7) inlayPosition(2)
+//   inlayDoubleOffset(7) inlayShrinkWidth1224(4) inlayShrinkHeight1224(4) inlayShrinkWidth(4) inlayGrowHeight(7)
+//   inlayTrapezoid(7) inlayParallelogram(7) showRadius(1) radiusValue(12) radiusSteps(4)
 //   showNutSlot(1) nutSlotWidth(5) nutSlotDistance(6)
-//   showPinholes(1) tangWidth(5) fretExtensionAmount(6)  = 130 bits
-const CONFIG_SCHEMA = [12,6,8,8,1,1,1,1,1,1,1,1,3,6,6,2,6,4,7,6,1,12,4,1,5,6,1,5,6];
-const CONFIG_CHARS  = 26;
+//   showPinholes(1) tangWidth(5) fretExtensionAmount(6)  = 143 bits
+const CONFIG_SCHEMA = [12,6,8,8,1,1,1,1,1,1,2,1,3,7,7,2,7,4,4,4,7,7,7,1,12,4,1,5,6,1,5,6];
+const CONFIG_DATA_CHARS = 28;
+const CONFIG_HASH_CHARS = 4;
+const CONFIG_CHARS      = CONFIG_DATA_CHARS + CONFIG_HASH_CHARS;
+const CONFIG_HASH_MOD   = Math.pow(36, CONFIG_HASH_CHARS); // 1,679,616
+const CONFIG_ALPHABET   = '0123456789abcdefghijklmnopqrstuvwxyz';
+
+// Polynomial hash (djb2-style) over the base-36 data symbols.
+function configHash(dataStr) {
+  let h = 5381;
+  for (let i = 0; i < dataStr.length; i++) {
+    h = (Math.imul(h, 33) ^ parseInt(dataStr[i], 36)) >>> 0;
+  }
+  return h % CONFIG_HASH_MOD;
+}
+
+function configHashChars(dataStr) {
+  return configHash(dataStr).toString(36).padStart(CONFIG_HASH_CHARS, '0');
+}
 
 function encodeConfig(s) {
   const fields = [
@@ -451,16 +703,19 @@ function encodeConfig(s) {
     s.showWidthAnnotations ? 1 : 0,                              //  1 bit
     s.showInlays           ? 1 : 0,                              //  1 bit
     s.doubleInlays         ? 1 : 0,                              //  1 bit
-    s.inlayDoubleOrientation === 'horizontal' ? 1 : 0,           //  1 bit
+    s.inlayDoubleOrientation === 'horizontal' ? 1 : s.inlayDoubleOrientation === 'staggered' ? 2 : 0, // 2 bits
     s.showBoundingBox      ? 1 : 0,                              //  1 bit
     Math.max(0, inlayPresets.findIndex(p => p.id === s.inlayShape)), //  3 bits
-    Math.round((parseFloat(s.inlaySize)          - 2)   * 2),   //  6 bits  0-36
-    Math.round((parseFloat(s.inlayHeight)        - 1)   * 2),   //  6 bits  0-58
+    Math.round(parseFloat(s.inlaySize)         * 2),             //  7 bits  0-100 (0-50mm)
+    Math.round(parseFloat(s.inlayHeight)       * 2),             //  7 bits  0-100 (0-50mm)
     s.inlayPosition === 'center' ? 0 : s.inlayPosition === 'top' ? 1 : 2, // 2 bits
-    Math.round((parseFloat(s.inlayDoubleOffset)  - 2)   * 2),   //  6 bits  0-56
-    Math.round(parseFloat(s.inlayShrinkWidth) / 0.25),           //  4 bits  0-8
+    Math.round(parseFloat(s.inlayDoubleOffset)      * 2),         //  7 bits  0-100 (0-50mm)
+    Math.round(parseFloat(s.inlayShrinkWidth1224)  / 0.05),      //  4 bits  0-15 (0-0.75)
+    Math.round(parseFloat(s.inlayShrinkHeight1224) / 0.05),      //  4 bits  0-15 (0-0.75)
+    Math.round(parseFloat(s.inlayShrinkWidth)      / 0.25),      //  4 bits  0-8
     Math.round(parseFloat(s.inlayGrowHeight)  / 0.1),            //  7 bits  0-100
-    parseInt(s.inlayTrapezoid),                                   //  6 bits  0-50 (raw slider)
+    parseInt(s.inlayTrapezoid) + 50,                              //  7 bits  0-100 (raw slider -50..+50 + offset)
+    parseInt(s.inlayParallelogram) + 50,                          //  7 bits  0-100 (raw slider -50..+50 + offset)
     s.showRadius           ? 1 : 0,                              //  1 bit
     Math.round((Math.min(parseFloat(s.radiusValue) || 50, 2097.5) - 50) * 2), // 12 bits 0-4095
     (parseInt(s.radiusSteps) || 5) - 2,                          //  4 bits  0-8
@@ -475,14 +730,13 @@ function encodeConfig(s) {
   for (let i = 0; i < fields.length; i++) {
     bits = (bits << BigInt(CONFIG_SCHEMA[i])) | BigInt(Math.max(0, fields[i]));
   }
-  return bits.toString(36).padStart(CONFIG_CHARS, '0');
+  const dataStr = bits.toString(36).padStart(CONFIG_DATA_CHARS, '0');
+  return (dataStr + configHashChars(dataStr)).toUpperCase();
 }
 
-function decodeConfig(raw) {
-  const code = raw.toLowerCase().replace(/\s/g, '');
-  if (code.length !== CONFIG_CHARS || !/^[0-9a-z]+$/.test(code)) throw new Error('Invalid code');
+function parseConfigData(dataStr) {
   let bits = 0n;
-  for (const c of code) bits = bits * 36n + BigInt(parseInt(c, 36));
+  for (const c of dataStr) bits = bits * 36n + BigInt(parseInt(c, 36));
   const totalBits = CONFIG_SCHEMA.reduce((a, b) => a + b, 0);
   const vals = [];
   let shift = BigInt(totalBits);
@@ -490,7 +744,35 @@ function decodeConfig(raw) {
     shift -= BigInt(nbits);
     vals.push(Number((bits >> shift) & ((1n << BigInt(nbits)) - 1n)));
   }
-  const [sl,nf,nw,w12,unit,sfn,scl,swa,si,di,dO,sbb,shape,isz,ih,ip,ido,sw,gh,trap,
+  return vals;
+}
+
+function decodeConfig(raw) {
+  const code = raw.toLowerCase().replace(/\s/g, '');
+  if (code.length !== CONFIG_CHARS || !/^[0-9a-z]+$/.test(code)) throw new Error('Invalid code');
+
+  // Try the code as-is, then any single-char substitution. Collect unique candidates.
+  const candidates = new Set();
+  const tryCode = (s) => {
+    const data = s.slice(0, CONFIG_DATA_CHARS);
+    const hash = s.slice(CONFIG_DATA_CHARS);
+    if (configHashChars(data) === hash) candidates.add(data);
+  };
+  tryCode(code);
+  if (candidates.size === 0) {
+    for (let i = 0; i < CONFIG_CHARS; i++) {
+      const orig = code[i];
+      for (const c of CONFIG_ALPHABET) {
+        if (c !== orig) tryCode(code.slice(0, i) + c + code.slice(i + 1));
+      }
+    }
+  }
+  if (candidates.size === 0) throw new Error('Invalid code (uncorrectable)');
+  if (candidates.size > 1)  throw new Error('Ambiguous code — too many errors to correct');
+  const dataStr = [...candidates][0];
+
+  const vals = parseConfigData(dataStr);
+  const [sl,nf,nw,w12,unit,sfn,scl,swa,si,di,dO,sbb,shape,isz,ih,ip,ido,sw1224,sh1224,sw,gh,trap,para,
          showR,rv,rs,sNS,nsw,nsd,sPH,tw,fea] = vals;
   return {
     scaleLength:          sl / 2 + 100,
@@ -503,16 +785,19 @@ function decodeConfig(raw) {
     showWidthAnnotations: swa === 1,
     showInlays:           si  === 1,
     doubleInlays:            di  === 1,
-    inlayDoubleOrientation:  dO  === 1 ? 'horizontal' : 'vertical',
+    inlayDoubleOrientation:  dO === 0 ? 'vertical' : dO === 1 ? 'horizontal' : 'staggered',
     showBoundingBox:         sbb === 1,
     inlayShape:           inlayPresets[shape]?.id ?? 'circle',
-    inlaySize:            isz / 2 + 2,
-    inlayHeight:          ih  / 2 + 1,
+    inlaySize:            isz / 2,
+    inlayHeight:          ih  / 2,
     inlayPosition:        ip === 0 ? 'center' : ip === 1 ? 'top' : 'bottom',
-    inlayDoubleOffset:    ido / 2 + 2,
-    inlayShrinkWidth:     sw  * 0.25,
+    inlayDoubleOffset:     ido   / 2,
+    inlayShrinkWidth1224:  sw1224 * 0.05,
+    inlayShrinkHeight1224: sh1224 * 0.05,
+    inlayShrinkWidth:      sw    * 0.25,
     inlayGrowHeight:      gh  * 0.1,
-    inlayTrapezoid:       trap,
+    inlayTrapezoid:       trap - 50,
+    inlayParallelogram:   para - 50,
     showRadius:           showR === 1,
     radiusValue:          rv  / 2 + 50,
     radiusSteps:          rs  + 2,
@@ -549,13 +834,16 @@ function importCode() {
 }
 
 // ── Persistence ───────────────────────────────────────────────
+// stateSnapshot always stores dimension values in mm so config codes are unit-independent.
 function stateSnapshot() {
+  const unit = document.getElementById('unit').value;
+  const toMm = v => unit === 'inch' ? parseFloat(v) * MM_PER_IN : parseFloat(v);
   return {
-    scaleLength:          document.getElementById('scaleLength').value,
+    scaleLength:          toMm(document.getElementById('scaleLength').value),
     numberOfFrets:        document.getElementById('numberOfFrets').value,
-    nutWidth:             document.getElementById('nutWidth').value,
-    width12thFret:        document.getElementById('width12thFret').value,
-    unit:                 document.getElementById('unit').value,
+    nutWidth:             toMm(document.getElementById('nutWidth').value),
+    width12thFret:        toMm(document.getElementById('width12thFret').value),
+    unit:                 unit,
     showFretNumbers:      document.getElementById('showFretNumbers').checked,
     showCenterLine:       document.getElementById('showCenterLine').checked,
     showWidthAnnotations: document.getElementById('showWidthAnnotations').checked,
@@ -563,28 +851,38 @@ function stateSnapshot() {
     doubleInlays:         document.getElementById('doubleInlays').checked,
     showBoundingBox:      document.getElementById('showBoundingBox').checked,
     inlayShape:           currentInlayPresetId,
-    inlaySize:            document.getElementById('inlaySize').value,
-    inlayHeight:          document.getElementById('inlayHeight').value,
-    inlayPosition:        inlayPositionValue,
-    inlayDoubleOffset:       document.getElementById('inlayDoubleOffset').value,
-    inlayDoubleOrientation:  inlayDoubleOrientationValue,
+    inlaySize:            parseFloat(document.getElementById('inlaySize').value),
+    inlayHeight:          parseFloat(document.getElementById('inlayHeight').value),
+    inlayPosition:        document.getElementById('inlayPosition').value,
+    inlayDoubleOffset:    parseFloat(document.getElementById('inlayDoubleOffset').value),
+    inlayDoubleOrientation:  document.getElementById('inlayDoubleOrientation').value,
+    inlayShrinkWidth1224:    document.getElementById('inlayShrinkWidth1224').value,
+    inlayShrinkHeight1224:   document.getElementById('inlayShrinkHeight1224').value,
     inlayShrinkWidth:        document.getElementById('inlayShrinkWidth').value,
     inlayGrowHeight:      document.getElementById('inlayGrowHeight').value,
     inlayTrapezoid:       document.getElementById('inlayTrapezoid').value,
+    inlayParallelogram:   document.getElementById('inlayParallelogram').value,
     showRadius:           document.getElementById('showRadius').checked,
-    radiusValue:          document.getElementById('radiusValue').value,
+    radiusValue:          toMm(document.getElementById('radiusValue').value),
     radiusSteps:          document.getElementById('radiusSteps').value,
     showNutSlot:          document.getElementById('showNutSlot').checked,
-    nutSlotWidth:         document.getElementById('nutSlotWidth').value,
-    nutSlotDistance:      document.getElementById('nutSlotDistance').value,
+    nutSlotWidth:         toMm(document.getElementById('nutSlotWidth').value),
+    nutSlotDistance:      toMm(document.getElementById('nutSlotDistance').value),
     showPinholes:         document.getElementById('showPinholes').checked,
-    tangWidth:            document.getElementById('tangWidth').value,
-    fretExtensionAmount:  document.getElementById('fretExtensionAmount').value,
+    tangWidth:            toMm(document.getElementById('tangWidth').value),
+    fretExtensionAmount:  toMm(document.getElementById('fretExtensionAmount').value),
+    accordionActive:      getAccordionActiveIndex(),
+    inlayGroupsOpen:      getInlayGroupsState(),
   };
 }
 
 function saveState() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(stateSnapshot())); } catch (e) {}
+  const snap = stateSnapshot();
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snap)); } catch (e) {}
+  try {
+    const input = document.getElementById('configCodeInput');
+    if (input && document.activeElement !== input) input.value = encodeConfig(snap);
+  } catch (e) {}
 }
 
 function restoreState() {
@@ -593,7 +891,11 @@ function restoreState() {
   if (s) applyStateData(s);
 }
 
+// applyStateData receives mm dimension values; converts to display unit before setting inputs.
 function applyStateData(s) {
+  const unit = s.unit || 'mm';
+  const d = v => (v == null) ? null : (unit === 'inch' ? (v / MM_PER_IN).toFixed(4) : v);
+
   const set = (id, v) => { if (v != null) document.getElementById(id).value = v; };
   const chk = (id, v) => { if (v != null) document.getElementById(id).checked = v; };
   const sld = (id, vid, v) => {
@@ -602,10 +904,15 @@ function applyStateData(s) {
     document.getElementById(vid).textContent = parseFloat(v).toFixed(2);
   };
 
-  set('scaleLength', s.scaleLength);  set('numberOfFrets', s.numberOfFrets);
-  set('nutWidth', s.nutWidth);        set('width12thFret', s.width12thFret);
+  if (s.unit) {
+    document.getElementById('unit').value = unit;
+    M.FormSelect.init(document.getElementById('unit'));
+    updateInputConstraints(unit);
+    prevUnit = unit;
+  }
 
-  if (s.unit) { document.getElementById('unit').value = s.unit; M.FormSelect.init(document.getElementById('unit')); }
+  set('scaleLength', d(s.scaleLength));  set('numberOfFrets', s.numberOfFrets);
+  set('nutWidth', d(s.nutWidth));        set('width12thFret', d(s.width12thFret));
 
   chk('showFretNumbers', s.showFretNumbers);  chk('showCenterLine', s.showCenterLine);
   chk('showWidthAnnotations', s.showWidthAnnotations);
@@ -626,20 +933,51 @@ function applyStateData(s) {
     if (sel) { sel.value = s.inlayDoubleOrientation; M.FormSelect.init(sel); }
   }
 
-  set('inlaySize', s.inlaySize);  set('inlayHeight', s.inlayHeight);
-  set('inlayDoubleOffset', s.inlayDoubleOffset);
-  sld('inlayShrinkWidth', 'inlayShrinkWidthVal', s.inlayShrinkWidth);
-  sld('inlayGrowHeight',  'inlayGrowHeightVal',  s.inlayGrowHeight);
-  sld('inlayTrapezoid',   'inlayTrapezoidVal',   s.inlayTrapezoid);
+  const setDimSld = (id, valId, v) => {
+    if (v == null) return;
+    const el = document.getElementById(id), valEl = document.getElementById(valId);
+    if (!el || !valEl) return;
+    el.value = v;
+    const u = document.getElementById('unit').value;
+    valEl.textContent = u === 'inch' ? (v / MM_PER_IN).toFixed(3) + ' in' : parseFloat(v).toFixed(1) + ' mm';
+  };
+  setDimSld('inlaySize',         'inlaySizeVal',         s.inlaySize);
+  setDimSld('inlayHeight',       'inlayHeightVal',       s.inlayHeight);
+  setDimSld('inlayDoubleOffset', 'inlayDoubleOffsetVal', s.inlayDoubleOffset);
+  sld('inlayShrinkWidth1224',  'inlayShrinkWidth1224Val',  s.inlayShrinkWidth1224);
+  sld('inlayShrinkHeight1224', 'inlayShrinkHeight1224Val', s.inlayShrinkHeight1224);
+  sld('inlayShrinkWidth',   'inlayShrinkWidthVal',   s.inlayShrinkWidth);
+  sld('inlayGrowHeight',    'inlayGrowHeightVal',    s.inlayGrowHeight);
+  sld('inlayTrapezoid',     'inlayTrapezoidVal',     s.inlayTrapezoid);
+  sld('inlayParallelogram', 'inlayParallelogramVal', s.inlayParallelogram);
 
   chk('showRadius',   s.showRadius);
-  set('radiusValue',  s.radiusValue);
+  set('radiusValue',  d(s.radiusValue));
   set('radiusSteps',  s.radiusSteps);
 
   chk('showNutSlot',     s.showNutSlot);
-  set('nutSlotWidth',    s.nutSlotWidth);
-  set('nutSlotDistance', s.nutSlotDistance);
+  set('nutSlotWidth',    d(s.nutSlotWidth));
+  set('nutSlotDistance', d(s.nutSlotDistance));
   chk('showPinholes',    s.showPinholes);
-  set('tangWidth',            s.tangWidth);
-  set('fretExtensionAmount',  s.fretExtensionAmount);
+  set('tangWidth',           d(s.tangWidth));
+  set('fretExtensionAmount', d(s.fretExtensionAmount));
+
+  if (typeof s.accordionActive === 'number') {
+    const inst = M.Collapsible.getInstance(document.getElementById('inputSections'));
+    if (inst) {
+      document.querySelectorAll('#inputSections > li').forEach((_, i) => inst.close(i));
+      if (s.accordionActive >= 0) inst.open(s.accordionActive);
+    }
+  }
+  if (s.inlayGroupsOpen) {
+    document.querySelectorAll('[onclick^="toggleInlayGroup"]').forEach(h => {
+      const span = h.querySelector('span'); if (!span) return;
+      const key = span.textContent.trim();
+      if (!(key in s.inlayGroupsOpen)) return;
+      const body = h.nextElementSibling, icon = h.querySelector('.material-icons');
+      const open = s.inlayGroupsOpen[key];
+      if (body) body.style.display = open ? '' : 'none';
+      if (icon) icon.style.transform = open ? 'rotate(0deg)' : 'rotate(-90deg)';
+    });
+  }
 }

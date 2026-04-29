@@ -1,33 +1,50 @@
 package com.luthertools.fretcalculator.service
 
+import org.intellij.lang.annotations.Language
 import java.util.UUID
 
 @DslMarker
 annotation class SvgDsl
 
-// ── Raw path string builders (internal — used by inlay preset callback) ──────
+// ── Path string builders — used by ShaperScope; onlinePathStr also used by
+//    SvgGeneratorService for the inlay-preset cutPath callback ─────────────────
 
-internal fun pocketPathStr(id: String, d: String, cutOffset: String = SHAPER_CUT_OFFSET, toolDia: String = SHAPER_TOOL_DIA): String =
+@Language("svg")
+internal fun pocketPathStr(
+    id: String, d: String,
+    cutOffset: String = SHAPER_CUT_OFFSET, toolDia: String = SHAPER_TOOL_DIA,
+    fillColor: String = COLOR_CUT_POCKET,
+): String =
     """  <g id="sg-${UUID.randomUUID()}">
-    <path id="$id" d="$d" fill="#7F7F7F" stroke="none" shaper:cutType="pocket" shaper:cutOffset="$cutOffset" shaper:toolDia="$toolDia"/>
+    <path id="$id" d="$d" fill="$fillColor" stroke="none" shaper:cutType="pocket" shaper:cutOffset="$cutOffset" shaper:toolDia="$toolDia"/>
   </g>"""
 
-internal fun onlinePathStr(id: String, d: String, cutOffset: String = SHAPER_CUT_OFFSET, toolDia: String = SHAPER_TOOL_DIA): String =
+@Language("svg")
+internal fun pathStr(
+    id: String, d: String,
+    cutOffset: String = SHAPER_CUT_OFFSET, toolDia: String = SHAPER_TOOL_DIA,
+    cutType: String = "online",
+    strokeColor: String = COLOR_CUT_ONLINE,
+    strokeWidth: Double = STROKE_SHAPER_CUT,
+): String =
     """  <g id="sg-${UUID.randomUUID()}">
-    <path id="$id" d="$d" fill="none" stroke="#7F7F7F" stroke-width="0.1" shaper:cutType="online" shaper:cutOffset="$cutOffset" shaper:toolDia="$toolDia"/>
+    <path id="$id" d="$d" fill="none" stroke="$strokeColor" stroke-width="$strokeWidth" shaper:cutType="$cutType" shaper:cutOffset="$cutOffset" shaper:toolDia="$toolDia"/>
   </g>"""
 
-// ── Geometry scope — inside pocket { } / online { }, returns the path 'd' ───
+// internal — InlayPreset.Circle uses this to build the path d for its cutPath callback
+internal fun circlePathD(cx: Double, cy: Double, r: Double): String =
+    "M ${(cx - r).f4()} ${cy.f4()} " +
+    "A ${r.f4()} ${r.f4()} 0 1 0 ${(cx + r).f4()} ${cy.f4()} " +
+    "A ${r.f4()} ${r.f4()} 0 1 0 ${(cx - r).f4()} ${cy.f4()} Z"
+
+// ── Geometry scope — inside a shaper cut block, returns the path 'd' ─────────
 
 @SvgDsl
 class CutScope {
     fun rect(x1: Double, y1: Double, x2: Double, y2: Double): String =
         "M ${x1.f4()} ${y1.f4()} L ${x2.f4()} ${y1.f4()} L ${x2.f4()} ${y2.f4()} L ${x1.f4()} ${y2.f4()} Z"
 
-    fun circle(cx: Double, cy: Double, size: Double): String {
-        val r = size / 2.0
-        return "M ${(cx - r).f4()} ${cy.f4()} A ${r.f4()} ${r.f4()} 0 1 0 ${(cx + r).f4()} ${cy.f4()} A ${r.f4()} ${r.f4()} 0 1 0 ${(cx - r).f4()} ${cy.f4()} Z"
-    }
+    fun circle(cx: Double, cy: Double, r: Double): String = circlePathD(cx, cy, r)
 
     fun line(x1: Double, y1: Double, x2: Double, y2: Double): String =
         "M ${x1.f4()} ${y1.f4()} L ${x2.f4()} ${y2.f4()}"
@@ -35,7 +52,7 @@ class CutScope {
     fun path(d: String): String = d
 }
 
-// ── Shaper scope — inside shaper { }, emits one <g><path/></g> per call ─────
+// ── Shaper scope — emits one <g><path/></g> per cut call ─────────────────────
 
 @SvgDsl
 class ShaperScope internal constructor(
@@ -49,7 +66,13 @@ class ShaperScope internal constructor(
         toolDia: String = defaultToolDia,
         block: CutScope.() -> String,
     ) {
-        out.appendLine(pocketPathStr(id, CutScope().block(), cutOffset, toolDia))
+        out.appendLine(pocketPathStr(
+            id = id,
+            d = CutScope().block(),
+            cutOffset = cutOffset,
+            toolDia = toolDia,
+            fillColor = COLOR_CUT_POCKET,
+        ))
     }
 
     fun online(
@@ -58,7 +81,46 @@ class ShaperScope internal constructor(
         toolDia: String = defaultToolDia,
         block: CutScope.() -> String,
     ) {
-        out.appendLine(onlinePathStr(id, CutScope().block(), cutOffset, toolDia))
+        out.appendLine(pathStr(
+            id = id,
+            d = CutScope().block(),
+            cutOffset = cutOffset,
+            toolDia = toolDia,
+            cutType = "online",
+            strokeColor = COLOR_CUT_ONLINE,
+        ))
+    }
+
+    fun inside(
+        id: String,
+        cutOffset: String = defaultCutOffset,
+        toolDia: String = defaultToolDia,
+        block: CutScope.() -> String,
+    ) {
+        out.appendLine(pathStr(
+            id = id,
+            d = CutScope().block(),
+            cutOffset = cutOffset,
+            toolDia = toolDia,
+            cutType = "inside",
+            strokeColor = COLOR_CUT_INSIDE,
+        ))
+    }
+
+    fun outside(
+        id: String,
+        cutOffset: String = defaultCutOffset,
+        toolDia: String = defaultToolDia,
+        block: CutScope.() -> String,
+    ) {
+        out.appendLine(pathStr(
+            id = id,
+            d = CutScope().block(),
+            cutOffset = cutOffset,
+            toolDia = toolDia,
+            cutType = "outside",
+            strokeColor = COLOR_CUT_OUTSIDE,
+        ))
     }
 }
 
@@ -79,6 +141,12 @@ class SvgScope internal constructor(private val out: StringBuilder) {
 
     // Escape hatch for pre-built SVG element strings (e.g. inlay preset output)
     internal fun raw(s: String) { out.appendLine(s) }
+
+    fun group(id: String, block: SvgScope.() -> Unit) {
+        out.appendLine("""  <g id="$id">""")
+        block()
+        out.appendLine("""  </g>""")
+    }
 
     fun layer(id: String, block: LayerScope.() -> Unit) {
         out.appendLine("""  <g id="$id" inkscape:groupmode="layer" inkscape:label="locked" pointer-events="none">""")
@@ -121,8 +189,9 @@ class LayerScope internal constructor(private val out: StringBuilder) {
         out.appendLine("""    <circle cx="${cx.f4()}" cy="${cy.f4()}" r="${r.f4()}" fill="$fill" stroke="$stroke" stroke-width="$strokeWidth"/>""")
     }
 
-    fun polygon(points: String, fill: String) {
-        out.appendLine("""    <polygon points="$points" fill="$fill"/>""")
+    fun polygon(points: String, fill: String, fillOpacity: Double? = null) {
+        val opAttr = if (fillOpacity != null) """ fill-opacity="$fillOpacity"""" else ""
+        out.appendLine("""    <polygon points="$points" fill="$fill"$opAttr/>""")
     }
 }
 

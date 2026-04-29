@@ -47,11 +47,59 @@
 
     #right-panel { flex: 1; overflow-y: auto; overflow-x: hidden; overflow-anchor: none; padding: 16px; }
 
+
     /* ── Collapsible accordion ───────────────────────────────── */
     .collapsible           { margin: 0 !important; box-shadow: none !important; }
     .collapsible-header    { font-size: .84rem; font-weight: 500; padding: 10px 16px; border-bottom: 1px solid rgba(0,0,0,.06); }
     .collapsible-header i  { color: #0277bd; margin-right: 8px; font-size: 18px; vertical-align: middle; }
-    .collapsible-body      { padding: 12px 18px 10px !important; border-bottom: 1px solid rgba(0,0,0,.06) !important; }
+    .collapsible-body      { padding: 0px 18px 10px !important; border-bottom: 1px solid rgba(0,0,0,.06) !important; }
+
+    /* ── Compact input fields (all) ─────────────────────────── */
+    .collapsible-body .input-field { margin-top: 1.4rem; margin-bottom: .2rem; padding-top: 6px; }
+    .collapsible-body .input-field label { font-size: .72rem; }
+    .collapsible-body .input-field > label.active { transform: translateY(-14px); }
+
+    .collapsible-body .switch {
+    }
+
+    /* ── Select dropdowns ────────────────────────────────────── */
+    .collapsible-body .select-wrapper input.select-dropdown {
+      font-size: .8rem;
+      height: 1.9rem;
+      line-height: 1.9rem;
+      border: 1px solid #e0e0e0 !important;
+      border-radius: 3px;
+      padding: 0 24px 0 8px !important;
+      box-sizing: border-box;
+      box-shadow: none !important;
+    }
+    .collapsible-body .select-wrapper input.select-dropdown:focus {
+      border-color: #0277bd !important;
+      box-shadow: none !important;
+    }
+    .collapsible-body .select-wrapper svg { top: 50%; transform: translateY(-50%); }
+    .dropdown-content.select-dropdown li > span { font-size: .8rem; }
+    .dropdown-content.select-dropdown li { min-height: 30px; }
+
+    /* ── Range inputs (sliders) ─────────────────────────────── */
+    .collapsible-body .range-field { margin-top: 8px !important; }
+    .collapsible-body .range-field input[type="range"] { margin: 0 !important; }
+
+    /* ── Number inputs ───────────────────────────────────────── */
+    .collapsible-body .input-field input[type="number"] {
+      font-size: .8rem;
+      height: 1.9rem;
+      border: 1px solid #e0e0e0 !important;
+      border-radius: 3px;
+      padding: 0 8px !important;
+      box-sizing: border-box;
+      box-shadow: none !important;
+      margin-bottom: 0;
+    }
+    .collapsible-body .input-field input[type="number"]:focus {
+      border-color: #0277bd !important;
+      box-shadow: none !important;
+    }
 
     /* ── Preview card ────────────────────────────────────────── */
     .preview-card { margin-bottom: 16px; }
@@ -109,40 +157,37 @@
           <div class="collapsible-header"><i class="material-icons">tune</i><b>Parameters</b></div>
           <div class="collapsible-body">
 
-            <div class="input-field">
-              <select id="preset"><option value="" disabled selected>— Custom —</option></select>
-              <label>Instrument Preset</label>
-            </div>
-            <div class="divider" style="margin:4px 0 12px"></div>
-            <div class="input-field">
-              <select id="unit">
-                <option value="mm" selected>Millimeters (mm)</option>
-                <option value="inch">Inches (in)</option>
-              </select>
-              <label>Unit</label>
-            </div>
-            <div class="input-field">
-              <input id="scaleLength" type="number" value="650" min="100" max="2000" step="0.5" class="validate">
-              <label for="scaleLength" class="active">Scale Length</label>
-              <span class="helper-text">100 – 2000 <span class="unit-hint">mm</span></span>
-            </div>
-            <div class="input-field">
-              <input id="numberOfFrets" type="number" value="20" min="0" max="36" step="1" class="validate">
-              <label for="numberOfFrets" class="active">Number of Frets</label>
-              <span class="helper-text">0 – 36</span>
-            </div>
-            <div class="input-field">
-              <input id="nutWidth" type="number" value="52" min="10" step="0.5" class="validate">
-              <label for="nutWidth" class="active">Nut Width</label>
-              <span class="helper-text">Width at the nut (<span class="unit-hint">mm</span>)</span>
-            </div>
-            <div class="input-field">
-              <input id="width12thFret" type="number" value="58" min="10" step="0.5" class="validate">
-              <label for="width12thFret" class="active">Width at 12th Fret</label>
-              <span class="helper-text">Fretboard width at fret 12 (<span class="unit-hint">mm</span>)</span>
+            <p style="margin-bottom:8px;font-weight:500;color:#0277bd;font-size:.82rem">General</p>
+            <div style="padding-left:18px">
+              <div class="input-field">
+                <select id="preset"><option value="" disabled selected>— Custom —</option></select>
+                <label>Instrument Preset</label>
+              </div>
+              <div class="input-field">
+                <select id="unit">
+                  <option value="mm" selected>Millimeters (mm)</option>
+                  <option value="inch">Inches (in)</option>
+                </select>
+                <label>Unit</label>
+              </div>
+              <div class="input-field">
+                <input id="scaleLength" type="number" value="650" min="100" max="2000" step="0.5" class="validate">
+                <label for="scaleLength" class="active">Scale Length</label>
+              </div>
+              <div class="input-field">
+                <input id="numberOfFrets" type="number" value="20" min="0" max="36" step="1" class="validate">
+                <label for="numberOfFrets" class="active">Number of Frets</label>
+              </div>
+              <div class="input-field">
+                <input id="nutWidth" type="number" value="52" min="10" step="0.5" class="validate">
+                <label for="nutWidth" class="active">Nut Width</label>
+              </div>
+              <div class="input-field">
+                <input id="width12thFret" type="number" value="58" min="10" step="0.5" class="validate">
+                <label for="width12thFret" class="active">Width at 12th Fret</label>
+              </div>
             </div>
 
-            <div class="divider" style="margin:4px 0 10px"></div>
             <p style="margin-bottom:8px;font-weight:500;color:#0277bd;font-size:.82rem">SVG Options</p>
             <div class="switch" style="margin-bottom:8px">
               <label><input type="checkbox" id="showFretNumbers" checked><span class="lever"></span>Fret numbers</label>
@@ -162,7 +207,7 @@
             <div class="switch" style="margin-bottom:6px">
               <label><input type="checkbox" id="showPinholes"><span class="lever"></span>Draw alignment pinholes (frets 1 &amp; 12)</label>
             </div>
-            <p style="font-size:.73rem;color:#888;margin-top:4px;line-height:1.4">
+            <p style="font-size:.73rem;color:#888;margin-top:4px;line-height:1.4;padding-left:18px">
               Pair of 1 mm ⌀ pockets at frets 1 &amp; 12, 10 mm from each fretboard edge.
             </p>
 
@@ -174,79 +219,118 @@
           <div class="collapsible-header"><i class="material-icons">adjust</i><b>Inlays</b></div>
           <div class="collapsible-body">
 
-            <div class="input-field">
-              <select id="inlayPreset"><!-- populated by JS from /api/frets/inlay-presets --></select>
-              <label>Inlay Type</label>
-            </div>
-
-            <div class="input-field">
-              <input id="inlaySize" type="number" value="6" min="2" max="20" step="0.5" class="validate">
-              <label for="inlaySize" class="active">Width / diameter (mm)</label>
-            </div>
-            <div class="input-field" id="inlayHeightField" style="display:none">
-              <input id="inlayHeight" type="number" value="4" min="1" max="30" step="0.5" class="validate">
-              <label for="inlayHeight" class="active">Height (mm)</label>
-            </div>
-            <div id="inlayTrapezoidField" style="display:none;margin-bottom:16px">
-              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
-                <span style="font-size:.82rem;color:#555;font-weight:500">Trapezoid factor</span>
-                <b id="inlayTrapezoidVal" style="font-size:.82rem;color:#0277bd">0.00</b>
+            <p style="margin-bottom:8px;font-weight:500;color:#0277bd;font-size:.82rem">General</p>
+            <div style="padding-left:18px">
+              <div class="input-field">
+                <select id="inlayPreset"><!-- populated by JS from /api/frets/inlay-presets --></select>
+                <label>Inlay Type</label>
               </div>
-              <p class="range-field" style="margin:0">
-                <input id="inlayTrapezoid" type="range" min="0" max="50" step="1" value="0">
-              </p>
-              <div style="display:flex;justify-content:space-between;font-size:.7rem;color:#9e9e9e">
-                <span>rectangle</span><span>trapezoid</span>
+
+              <div class="input-field">
+                <select id="inlayPosition">
+                  <option value="center" selected>Center</option>
+                  <option value="top">Treble edge</option>
+                  <option value="bottom">Bass edge</option>
+                </select>
+                <label>Position</label>
+              </div>
+
+              <div class="input-field">
+                <select id="inlayDoubleOrientation">
+                  <option value="vertical" selected>Vertical (across fretboard width)</option>
+                  <option value="horizontal">Horizontal (along fret direction)</option>
+                  <option value="staggered">Staggered (diagonal)</option>
+                </select>
+                <label>Double Marker Orientation</label>
+              </div>
+
+              <div class="switch" style="margin-bottom:8px; margin-top: 12px; transform: translateX(-18px); ">
+                <label><input type="checkbox" id="showInlays" checked><span class="lever"></span>Show inlay markers</label>
+              </div>
+              <div class="switch" style="margin-bottom:10px; margin-top: 12px; transform: translateX(-18px); ">
+                <label><input type="checkbox" id="doubleInlays" checked><span class="lever"></span>Double markers at frets 12 &amp; 24</label>
               </div>
             </div>
 
-            <div class="input-field">
-              <select id="inlayPosition">
-                <option value="center" selected>Center</option>
-                <option value="top">Treble edge</option>
-                <option value="bottom">Bass edge</option>
-              </select>
-              <label>Position</label>
+            <!-- ── Size ── -->
+            <div onclick="toggleInlayGroup(this)" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:7px 0 5px;user-select:none">
+              <span style="font-weight:500;color:#0277bd;font-size:.82rem">Size</span>
+              <i class="material-icons" style="font-size:1rem;color:#bdbdbd">expand_more</i>
             </div>
-
-            <div class="input-field">
-              <input id="inlayDoubleOffset" type="number" value="8" min="2" max="30" step="0.5" class="validate">
-              <label for="inlayDoubleOffset" class="active">12th/24th pair offset (mm)</label>
-              <span class="helper-text">Centre-to-centre distance</span>
-            </div>
-
-            <div class="input-field">
-              <select id="inlayDoubleOrientation">
-                <option value="vertical" selected>Vertical (across fretboard width)</option>
-                <option value="horizontal">Horizontal (along fret direction)</option>
-              </select>
-              <label>Double Marker Orientation</label>
-            </div>
-
-            <div class="divider" style="margin:4px 0 12px"></div>
-
-            <div style="margin-bottom:12px">
-              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
-                <span style="font-size:.82rem;color:#555;font-weight:500">Width shrink factor</span>
-                <b id="inlayShrinkWidthVal" style="font-size:.82rem;color:#0277bd">0.00</b>
+            <div style="padding-left:14px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:0">
+                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Width / diameter</span>
+                <div class="range-field" style="flex:1;margin:0"><input id="inlaySize" type="range" min="0" max="50" step="0.5" value="6"></div>
+                <b id="inlaySizeVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">6.0 mm</b>
               </div>
-              <p class="range-field" style="margin:0"><input id="inlayShrinkWidth" type="range" min="0" max="2" step="0.25" value="0"></p>
-              <div style="display:flex;justify-content:space-between;font-size:.7rem;color:#9e9e9e"><span>none</span><span>scales with fret spacing</span></div>
-            </div>
-            <div style="margin-bottom:10px">
-              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
-                <span style="font-size:.82rem;color:#555;font-weight:500">Height grow factor</span>
-                <b id="inlayGrowHeightVal" style="font-size:.82rem;color:#0277bd">0.00</b>
+              <div id="inlayHeightField" style="display:none;align-items:center;gap:8px;margin-bottom:0">
+                <span id="inlayHeightLabel" style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Height</span>
+                <div class="range-field" style="flex:1;margin:0"><input id="inlayHeight" type="range" min="0" max="50" step="0.5" value="4"></div>
+                <b id="inlayHeightVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">4.0 mm</b>
               </div>
-              <p class="range-field" style="margin:0"><input id="inlayGrowHeight" type="range" min="0" max="10" step="0.1" value="0"></p>
-              <div style="display:flex;justify-content:space-between;font-size:.7rem;color:#9e9e9e"><span>none</span><span>scales with fretboard width</span></div>
             </div>
 
-            <div class="switch" style="margin-bottom:8px">
-              <label><input type="checkbox" id="showInlays" checked><span class="lever"></span>Show inlay markers</label>
+            <!-- ── 12th / 24th ── -->
+            <div onclick="toggleInlayGroup(this)" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:7px 0 5px;border-top:1px solid #eeeeee;user-select:none">
+              <span style="font-weight:500;color:#0277bd;font-size:.82rem">12th / 24th</span>
+              <i class="material-icons" style="font-size:1rem;color:#bdbdbd">expand_more</i>
             </div>
-            <div class="switch">
-              <label><input type="checkbox" id="doubleInlays" checked><span class="lever"></span>Double markers at frets 12 &amp; 24</label>
+            <div style="padding-left:14px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:0">
+                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Pair offset</span>
+                <div class="range-field" style="flex:1;margin:0"><input id="inlayDoubleOffset" type="range" min="0" max="50" step="0.5" value="8"></div>
+                <b id="inlayDoubleOffsetVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">8.0 mm</b>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:0">
+                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Width shrink</span>
+                <div class="range-field" style="flex:1;margin:0"><input id="inlayShrinkWidth1224" type="range" min="0" max="0.75" step="0.05" value="0"></div>
+                <b id="inlayShrinkWidth1224Val" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">0.00</b>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:0">
+                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Height shrink</span>
+                <div class="range-field" style="flex:1;margin:0"><input id="inlayShrinkHeight1224" type="range" min="0" max="0.75" step="0.05" value="0"></div>
+                <b id="inlayShrinkHeight1224Val" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">0.00</b>
+              </div>
+            </div>
+
+            <!-- ── Fretboard scaling ── -->
+            <div onclick="toggleInlayGroup(this)" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:7px 0 5px;border-top:1px solid #eeeeee;user-select:none">
+              <span style="font-weight:500;color:#0277bd;font-size:.82rem">Fretboard scaling</span>
+              <i class="material-icons" style="font-size:1rem;color:#bdbdbd">expand_more</i>
+            </div>
+            <div style="padding-left:14px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:0">
+                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Width shrink</span>
+                <div class="range-field" style="flex:1;margin:0"><input id="inlayShrinkWidth" type="range" min="0" max="2" step="0.25" value="0"></div>
+                <button onclick="matchInlaySlider('inlayShrinkWidth','inlayShrinkWidthVal',1)" style="font-size:.63rem;padding:1px 7px;background:#e3f2fd;color:#0277bd;border:1px solid #bbdefb;border-radius:8px;cursor:pointer;line-height:1.5;flex-shrink:0">match</button>
+                <b id="inlayShrinkWidthVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:36px;text-align:right">0.00</b>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:0">
+                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Height grow</span>
+                <div class="range-field" style="flex:1;margin:0"><input id="inlayGrowHeight" type="range" min="0" max="10" step="0.1" value="0"></div>
+                <button onclick="matchInlaySlider('inlayGrowHeight','inlayGrowHeightVal',1)" style="font-size:.63rem;padding:1px 7px;background:#e3f2fd;color:#0277bd;border:1px solid #bbdefb;border-radius:8px;cursor:pointer;line-height:1.5;flex-shrink:0">match</button>
+                <b id="inlayGrowHeightVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:36px;text-align:right">0.00</b>
+              </div>
+            </div>
+
+            <!-- ── Shape deformation (rectangle only) ── -->
+            <div id="inlayDeformationGroup" style="display:none">
+              <div onclick="toggleInlayGroup(this)" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:7px 0 5px;border-top:1px solid #eeeeee;user-select:none">
+                <span style="font-weight:500;color:#0277bd;font-size:.82rem">Shape</span>
+                <i class="material-icons" style="font-size:1rem;color:#bdbdbd">expand_more</i>
+              </div>
+              <div style="padding-left:14px">
+                <div id="inlayTrapezoidField" style="display:flex;align-items:center;gap:8px;margin-bottom:0">
+                  <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Trapezoid</span>
+                  <div class="range-field" style="flex:1;margin:0"><input id="inlayTrapezoid" type="range" min="-50" max="50" step="1" value="0"></div>
+                  <b id="inlayTrapezoidVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">0.00</b>
+                </div>
+                <div id="inlayParallelogramField" style="display:flex;align-items:center;gap:8px;margin-bottom:0">
+                  <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Parallelogram</span>
+                  <div class="range-field" style="flex:1;margin:0"><input id="inlayParallelogram" type="range" min="-50" max="50" step="1" value="0"></div>
+                  <b id="inlayParallelogramVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">0.00</b>
+                </div>
+              </div>
             </div>
 
           </div>
@@ -261,26 +345,24 @@
               <select id="radiusPreset">
                 <option value="">— Custom —</option>
                 <option value="0">Flat (no radius)</option>
-                <option value="184">7.25″ / 184 mm (Vintage Fender)</option>
-                <option value="241">9.5″ / 241 mm (Modern Fender)</option>
-                <option value="254">10″ / 254 mm (PRS-style)</option>
-                <option value="305">12″ / 305 mm (Gibson-style)</option>
-                <option value="356">14″ / 356 mm</option>
-                <option value="406">16″ / 406 mm (Ibanez / Warmoth)</option>
+                <option value="184">7.25″ (Vintage Fender)</option>
+                <option value="241">9.5″ (Modern Fender)</option>
+                <option value="254">10″ (PRS-style)</option>
+                <option value="305">12″ (Gibson-style)</option>
+                <option value="356">14″</option>
+                <option value="406">16″ (Ibanez / Warmoth)</option>
               </select>
               <label>Common Radii</label>
             </div>
             <div class="input-field">
               <input id="radiusValue" type="number" value="305" min="50" max="5000" step="0.5" class="validate">
-              <label for="radiusValue" class="active">Radius (mm)</label>
-              <span class="helper-text">50 – 5000 mm</span>
+              <label for="radiusValue" class="active">Radius (<span class="unit-hint">mm</span>)</label>
             </div>
             <div class="input-field">
               <input id="radiusSteps" type="number" value="5" min="2" max="10" step="1" class="validate">
               <label for="radiusSteps" class="active">Contour Steps</label>
-              <span class="helper-text">Number of milling zones (2 – 10)</span>
             </div>
-            <div class="switch" style="margin-bottom:10px">
+            <div class="switch" style="margin-bottom:20px;    margin-top: 12px; transform: translateX(-18px);">
               <label><input type="checkbox" id="showRadius"><span class="lever"></span>Show radius contours in SVG</label>
             </div>
             <div style="padding:8px 10px;background:#fff3e0;border-radius:4px;font-size:.73rem;color:#555;line-height:1.5">
@@ -298,18 +380,16 @@
           <div class="collapsible-header"><i class="material-icons">push_pin</i><b>Nut</b></div>
           <div class="collapsible-body">
 
-            <div class="switch" style="margin-bottom:12px">
+            <div class="switch" style="margin-bottom:20px;  margin-top: 12px; transform: translateX(-18px);" >
               <label><input type="checkbox" id="showNutSlot"><span class="lever"></span>Draw nut slot pocket</label>
             </div>
             <div class="input-field">
               <input id="nutSlotWidth" type="number" value="5.5" min="0.5" max="15" step="0.5" class="validate">
-              <label for="nutSlotWidth" class="active">Nut thickness (mm)</label>
-              <span class="helper-text">Nut bone dimension in fret direction</span>
+              <label for="nutSlotWidth" class="active">Nut thickness (<span class="unit-hint">mm</span>)</label>
             </div>
             <div class="input-field">
               <input id="nutSlotDistance" type="number" value="0" min="-20" max="0" step="0.5" class="validate">
-              <label for="nutSlotDistance" class="active">Distance from 0th fret (mm)</label>
-              <span class="helper-text">0 = slot right edge at 0th fret · negative = set back toward headstock</span>
+              <label for="nutSlotDistance" class="active">Distance from 0th fret (<span class="unit-hint">mm</span>)</label>
             </div>
 
           </div>
@@ -326,21 +406,18 @@
             </p>
             <div class="input-field">
               <input id="tangWidth" type="number" value="0.60" min="0.10" max="3.00" step="0.01" class="validate">
-              <label for="tangWidth" class="active">Slot width (mm)</label>
-              <span class="helper-text">0.10 – 3.00 mm</span>
+              <label for="tangWidth" class="active">Slot width (<span class="unit-hint">mm</span>)</label>
             </div>
-            <div style="background:#e8eaf6;border-radius:4px;padding:8px 10px;font-size:.73rem;color:#333;line-height:1.7;margin-bottom:14px">
-              <b style="color:#1a237e">Common slot widths</b><br>
+            <div style="background:#e8eaf6;border-radius:4px;padding:8px 10px;font-size:.73rem;color:#333;line-height:1.7;margin-bottom:14px;  margin-top: 12px;">
+              <b style="color:#1a237e;">Common slot widths</b><br>
               Jescar FW55090: <b>0.53 mm</b> &nbsp;·&nbsp; Dunlop 6100: <b>0.56 mm</b><br>
               Sintoms medium: <b>0.66 mm</b> &nbsp;·&nbsp; SS narrow: <b>0.75 mm</b>
             </div>
 
-            <div class="divider" style="margin:4px 0 12px"></div>
             <p style="margin-bottom:8px;font-size:.82rem;color:#1a237e;font-weight:500">Fret Extension / Indent</p>
             <div class="input-field">
               <input id="fretExtensionAmount" type="number" value="0" min="-10" max="20" step="0.5" class="validate">
-              <label for="fretExtensionAmount" class="active">Amount (mm)</label>
-              <span class="helper-text">Positive = extend beyond edge · Negative = indent from edge · 0 = flush</span>
+              <label for="fretExtensionAmount" class="active">Amount (<span class="unit-hint">mm</span>)</label>
             </div>
 
           </div>
@@ -351,19 +428,20 @@
 
     <!-- Download + config always visible at bottom of left panel -->
     <div id="left-actions">
-      <div style="display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px">
+      <div style="padding:8px 12px 8px">
         <a id="downloadBtn"
-           class="btn light-blue darken-1 waves-effect waves-light disabled"
-           style="flex:1;text-align:center"
-           onclick="downloadSvg()">
-          <i class="material-icons left">download</i>SVG
+           class="btn light-blue darken-1 waves-effect waves-light disabled dropdown-trigger"
+           data-target="downloadMenu"
+           style="width:100%;text-align:center;display:flex;align-items:center;justify-content:center">
+          <i class="material-icons left">download</i>Download<i class="material-icons right">arrow_drop_down</i>
         </a>
-        <a id="downloadPdfBtn"
-           class="btn light-blue lighten-1 waves-effect waves-light disabled"
-           style="flex:1;text-align:center"
-           onclick="downloadPdf()">
-          <i class="material-icons left">picture_as_pdf</i>PDF
-        </a>
+        <ul id="downloadMenu" class="dropdown-content">
+          <li><a onclick="downloadSvg()"><i class="material-icons">download</i>Full SVG</a></li>
+          <li><a onclick="downloadPdf()"><i class="material-icons">picture_as_pdf</i>PDF</a></li>
+          <li class="divider" tabindex="-1"></li>
+          <li><a onclick="downloadLayerSvg('frets')" title="SVG without inlays — fret slots, outline, nut"><i class="material-icons">straighten</i>Frets layer</a></li>
+          <li><a onclick="downloadLayerSvg('inlays')" title="SVG with inlay pockets only"><i class="material-icons">adjust</i>Inlays layer</a></li>
+        </ul>
       </div>
       <div style="padding:0 12px 10px">
         <p style="margin:0 0 4px;font-size:.72rem;color:#9e9e9e">Configuration code</p>
@@ -428,7 +506,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script th:src="@{/js/app.js(v=13)}"></script>
+<script th:src="@{/js/app.js(v=17)}"></script>
 
 </body>
 </html>

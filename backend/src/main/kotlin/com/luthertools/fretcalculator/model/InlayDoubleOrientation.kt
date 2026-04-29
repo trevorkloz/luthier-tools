@@ -5,7 +5,8 @@ import com.fasterxml.jackson.annotation.JsonValue
 
 enum class InlayDoubleOrientation(val value: String) {
     VERTICAL("vertical"),
-    HORIZONTAL("horizontal");
+    HORIZONTAL("horizontal"),
+    STAGGERED("staggered");
 
     @JsonValue fun toValue() = value
 

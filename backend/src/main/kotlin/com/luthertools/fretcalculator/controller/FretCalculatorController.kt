@@ -44,6 +44,17 @@ class FretCalculatorController(
             .body(svg)
     }
 
+    @PostMapping("/inlays-sheet", produces = ["image/svg+xml"])
+    fun inlaysSheet(@RequestBody request: FretRequest): ResponseEntity<String> {
+        val positions = fretCalculatorService.calculateFretPositions(request.scaleLength, request.numberOfFrets)
+        val svg       = svgGeneratorService.generateInlaysSheet(request, positions)
+        val preset    = SvgGeneratorService.INLAY_PRESETS.find { it.id == request.inlayShape }?.name ?: "inlays"
+        return ResponseEntity.ok()
+            .header("Content-Disposition", "attachment; filename=\"inlays-sheet-${request.scaleLength}${request.unit}-${preset}.svg\"")
+            .contentType(MediaType.parseMediaType("image/svg+xml"))
+            .body(svg)
+    }
+
     private fun generateFretboardSvg(request: FretRequest): Pair<List<FretPosition>, String> {
         val positions = fretCalculatorService.calculateFretPositions(request.scaleLength, request.numberOfFrets)
         return positions to svgGeneratorService.generateSvg(request, positions)
