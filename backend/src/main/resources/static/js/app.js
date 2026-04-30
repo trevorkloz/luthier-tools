@@ -256,11 +256,23 @@ function bindSlider(id, valId) {
 //   - Right-click or Shift-click a control point of a Q segment: drop it (Q → L)
 let customPathPoints = [];
 let customPathArcMode = false;
+let customPathClosed = true;   // true → render filled closed area; false → open lines only
 let customPathDrag = null;     // { mode, target, downXn, downYn, moved, ... }
 const CUSTOM_PATH_VB = 100;
 const CUSTOM_PATH_SNAP_DIST = 6;
-const CUSTOM_PATH_HIT_RADIUS = 3;
-const CUSTOM_PATH_DRAG_THRESHOLD = 1.5; // viewBox units movement to count as a drag
+// Point-hit is intentionally bigger than segment-hit so clicks just outside a vertex's
+// visible circle still latch onto the vertex (drag intent) rather than landing on the
+// segment line that touches it and inserting a stray vertex.
+const CUSTOM_PATH_POINT_HIT_RADIUS    = 5;
+const CUSTOM_PATH_SEGMENT_HIT_RADIUS  = 3;
+// Wider "missed drag" radius used at mouseup time to suppress click-add / segment-insert
+// when the click is close to any point. Helpful for Q segments whose curve passes very
+// near an endpoint — without this, clicks within ~5–8 vb of an endpoint land on the
+// curve and silently insert a (de Casteljau) vertex that doesn't change the shape.
+const CUSTOM_PATH_NEAR_POINT_RADIUS   = 8;
+const CUSTOM_PATH_HIT_RADIUS = CUSTOM_PATH_POINT_HIT_RADIUS;     // back-compat alias
+const CUSTOM_PATH_DRAG_THRESHOLD  = 1.5; // viewBox units of movement before a drag actually starts
+const CUSTOM_PATH_CLICK_THRESHOLD = 0.8; // movement above this turns a release into a no-op (was a missed drag, not a click)
 
 function customPathSegEnd(seg) {
   return seg.length === 2 ? [seg[0], seg[1]]
@@ -325,7 +337,7 @@ function customPathDistToQuad(px, py, x0, y0, cx, cy, x1, y1) {
 // Hit-test against segment edges (lines + curves). Returns { segIndex, t, prev } or null.
 function customPathSegmentHit(xn, yn) {
   let best = null;
-  let bestDist = CUSTOM_PATH_HIT_RADIUS;
+  let bestDist = CUSTOM_PATH_SEGMENT_HIT_RADIUS;
   for (let i = 1; i < customPathPoints.length; i++) {
     const prev = customPathSegEnd(customPathPoints[i - 1]);
     const seg  = customPathPoints[i];
@@ -384,7 +396,7 @@ function customPathInsertOnSegment(hit, xn, yn) {
 // Vertices win ties over control points (so a vertex on top of a cp is grabbed first).
 function customPathHitTest(xn, yn) {
   let best = null;
-  let bestDist = CUSTOM_PATH_HIT_RADIUS;
+  let bestDist = CUSTOM_PATH_POINT_HIT_RADIUS;
   for (const t of customPathHitTargets()) {
     const dx = (t.x - xn) * CUSTOM_PATH_VB;
     const dy = (t.y - yn) * CUSTOM_PATH_VB;
@@ -466,18 +478,6 @@ function customPathClick(evt) {
     customPathRedraw();
     scheduleCalculate();
     return;
-  }
-
-  // Close-by-proximity gesture: only when no segment was hit.
-  if (customPathPoints.length >= 3) {
-    const [sx, sy] = customPathPoints[0];
-    const dx = (sx - x) * CUSTOM_PATH_VB;
-    const dy = (sy - y) * CUSTOM_PATH_VB;
-    if (Math.sqrt(dx * dx + dy * dy) <= CUSTOM_PATH_SNAP_DIST) {
-      customPathRedraw();
-      scheduleCalculate();
-      return;
-    }
   }
 
   if (customPathArcMode) {
@@ -567,6 +567,7 @@ function customPathMouseMove(evt) {
   const dxN  = xn - customPathDrag.downXn;
   const dyN  = yn - customPathDrag.downYn;
   const dist = Math.sqrt(dxN * dxN + dyN * dyN) * CUSTOM_PATH_VB;
+  if (dist > (customPathDrag.maxDist || 0)) customPathDrag.maxDist = dist;
   if (!customPathDrag.moved && dist > CUSTOM_PATH_DRAG_THRESHOLD) {
     customPathDrag.moved = true;
   }
@@ -598,8 +599,26 @@ function customPathMouseMove(evt) {
   if (customPathDrag.target) {
     svg.style.cursor = 'grabbing';
     const t = customPathDrag.target;
+    const oldX = customPathPoints[t.segIndex][t.coordOffset];
+    const oldY = customPathPoints[t.segIndex][t.coordOffset + 1];
     customPathPoints[t.segIndex][t.coordOffset]     = xn;
     customPathPoints[t.segIndex][t.coordOffset + 1] = yn;
+    // Closed-via-arc paths have a final Q whose endpoint is the start coords. When the
+    // user drags the start vertex, sync any matching segment endpoints so the closing
+    // edge follows along instead of leaving a stranded white dot at the old start spot.
+    if (t.segIndex === 0 && t.coordOffset === 0) {
+      const eps = 0.0005;
+      for (let i = 1; i < customPathPoints.length; i++) {
+        const seg = customPathPoints[i];
+        const endOff = seg.length - 2;
+        if (endOff >= 0
+            && Math.abs(seg[endOff]     - oldX) < eps
+            && Math.abs(seg[endOff + 1] - oldY) < eps) {
+          seg[endOff]     = xn;
+          seg[endOff + 1] = yn;
+        }
+      }
+    }
     customPathRedraw();
   }
 }
@@ -629,6 +648,32 @@ function customPathMouseUp(evt) {
     return;
   }
 
+  // Suppress accidental adds: if the cursor wobbled more than the click threshold,
+  // assume the user was trying to drag a nearby point but missed the hit radius.
+  if ((drag.maxDist || 0) > CUSTOM_PATH_CLICK_THRESHOLD) return;
+
+  // Wider drag-intent suppression: if the click is close to any vertex/cp (beyond
+  // the strict point-hit radius), treat it as a missed drag instead of a click.
+  // This stops curves that pass near an endpoint from absorbing intended grabs.
+  // The close-to-start gesture (≥3 segments) takes priority before this filter.
+  const { xn, yn } = customPathEventPos(evt);
+  if (customPathPoints.length >= 3) {
+    const [sx, sy] = customPathPoints[0];
+    const dxs = (sx - xn) * CUSTOM_PATH_VB;
+    const dys = (sy - yn) * CUSTOM_PATH_VB;
+    if (Math.sqrt(dxs * dxs + dys * dys) <= CUSTOM_PATH_SNAP_DIST) {
+      customPathRedraw();
+      scheduleCalculate();
+      return;
+    }
+  }
+  const nearR2 = CUSTOM_PATH_NEAR_POINT_RADIUS * CUSTOM_PATH_NEAR_POINT_RADIUS;
+  for (const t of customPathHitTargets()) {
+    const dx = (t.x - xn) * CUSTOM_PATH_VB;
+    const dy = (t.y - yn) * CUSTOM_PATH_VB;
+    if (dx * dx + dy * dy < nearR2) return;
+  }
+
   customPathClick(evt);
 }
 
@@ -647,6 +692,15 @@ function customPathRedraw() {
     modeBtn.style.background  = customPathArcMode ? '#fff3e0' : '#e8f5e9';
     modeBtn.style.color       = customPathArcMode ? '#e65100' : '#2e7d32';
     modeBtn.style.borderColor = customPathArcMode ? '#ffe0b2' : '#c8e6c9';
+  }
+  const closedBtn = document.getElementById('customPathClosedBtn');
+  if (closedBtn) {
+    const icon = customPathClosed ? 'category' : 'polyline';
+    closedBtn.innerHTML = `<i class="material-icons" style="font-size:14px;line-height:14px;vertical-align:middle">${icon}</i>`;
+    closedBtn.title = customPathClosed ? 'Closed (filled area)' : 'Open (lines only)';
+    closedBtn.style.background  = customPathClosed ? '#e3f2fd' : '#fff';
+    closedBtn.style.color       = customPathClosed ? '#0277bd' : '#455a64';
+    closedBtn.style.borderColor = customPathClosed ? '#bbdefb' : '#cfd8dc';
   }
 
   const grid = [];
@@ -675,18 +729,25 @@ function customPathRedraw() {
   }
 
   let shape = '';
-  if (customPathPoints.length >= 3) {
+  if (customPathClosed && customPathPoints.length >= 3) {
     shape = `<path d="${d} Z" fill="#bbdefb" fill-opacity="0.5" stroke="#0277bd" stroke-width="0.6"/>`;
   } else if (customPathPoints.length >= 1) {
     shape = `<path d="${d}" fill="none" stroke="#0277bd" stroke-width="0.6"/>`;
   }
 
-  // Vertices (segment endpoints), first vertex highlighted
-  const verts = customPathPoints.map((seg, i) => {
-    const [vx, vy] = customPathSegEnd(seg);
-    const fill = i === 0 ? '#0277bd' : '#fff';
-    return `<circle cx="${vx * CUSTOM_PATH_VB}" cy="${vy * CUSTOM_PATH_VB}" r="1.6" fill="${fill}" stroke="#0277bd" stroke-width="0.6"/>`;
-  }).join('');
+  // Vertices (segment endpoints). Non-start vertices first, start last so it always
+  // wins the z-order — needed because a closed-via-arc path may have a Q whose endpoint
+  // sits exactly on the start coords, and a white circle drawn after a blue one would
+  // otherwise hide the start.
+  let verts = '';
+  for (let i = 1; i < customPathPoints.length; i++) {
+    const [vx, vy] = customPathSegEnd(customPathPoints[i]);
+    verts += `<circle cx="${vx * CUSTOM_PATH_VB}" cy="${vy * CUSTOM_PATH_VB}" r="1.6" fill="#fff" stroke="#0277bd" stroke-width="0.6"/>`;
+  }
+  if (customPathPoints.length > 0) {
+    const [sx, sy] = customPathPoints[0];
+    verts += `<circle cx="${sx * CUSTOM_PATH_VB}" cy="${sy * CUSTOM_PATH_VB}" r="1.6" fill="#0277bd" stroke="#0277bd" stroke-width="0.6"/>`;
+  }
 
   // Control points of committed Q/C segments — small grey marks + handle line
   const cps = customPathPoints.map((seg, i) => {
@@ -707,6 +768,12 @@ function customPathRedraw() {
 function customPathToggleMode() {
   customPathArcMode = !customPathArcMode;
   customPathRedraw();
+}
+
+function customPathToggleClosed() {
+  customPathClosed = !customPathClosed;
+  customPathRedraw();
+  scheduleCalculate();
 }
 
 function customPathClear() {
@@ -924,6 +991,7 @@ function buildRequest() {
     inlayTrapezoid:       parseFloat(document.getElementById('inlayTrapezoid').value) / 50,
     inlayParallelogram:   parseFloat(document.getElementById('inlayParallelogram').value) / 50,
     inlayCustomPath:      currentInlayPresetId === 'custom' ? customPathPoints : [],
+    inlayCustomClosed:    customPathClosed,
   };
 }
 
@@ -1440,6 +1508,7 @@ function stateSnapshot() {
     accordionActive:      getAccordionActiveIndex(),
     inlayGroupsOpen:      getInlayGroupsState(),
     inlayCustomPath:      customPathPoints,
+    inlayCustomClosed:    customPathClosed,
   };
 }
 
@@ -1522,6 +1591,10 @@ function applyStateData(s) {
     customPathPoints = s.inlayCustomPath
       .filter(p => Array.isArray(p) && (p.length === 2 || p.length === 4 || p.length === 6))
       .map(p => p.map(Number));
+    customPathRedraw();
+  }
+  if (typeof s.inlayCustomClosed === 'boolean') {
+    customPathClosed = s.inlayCustomClosed;
     customPathRedraw();
   }
 

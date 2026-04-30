@@ -80,6 +80,7 @@ class SvgGeneratorService {
                         (request.showRadius && request.radiusValue > 0.0) || request.showPinholes
 
         val cutFn: (String, String) -> String = { id, d -> pathStr(id, d, cutOffset = SHAPER_CUT_OFFSET, cutType = "inside", strokeColor = COLOR_CUT_INSIDE) }
+        val cutFnOnline: (String, String) -> String = { id, d -> pathStr(id, d, cutType = "online", strokeColor = COLOR_CUT_ONLINE) }
 
         return buildSvg(svgWidth, svgHeight,
             "Fretboard SVG — scale ${request.scaleLength} ${request.unit}, ${request.numberOfFrets} frets") {
@@ -183,8 +184,10 @@ class SvgGeneratorService {
                         yBottom           = { d -> yBottom(d) },
                         centerY           = centerY,
                         cutPath           = cutFn,
+                        cutPathOnline     = cutFnOnline,
                         fretNumber        = inlayFret,
                         customPath        = request.inlayCustomPath,
+                        customPathClosed  = request.inlayCustomClosed,
                     )
                     for (element in preset.draw(ctx)) raw(element)
                 }
@@ -508,6 +511,9 @@ class SvgGeneratorService {
         val sheetCut: (String, String) -> String = { id, d ->
             pathStr(id, d, cutOffset = SHAPER_CUT_OFFSET, cutType = "outside", strokeColor = COLOR_CUT_OUTSIDE)
         }
+        val sheetCutOnline: (String, String) -> String = { id, d ->
+            pathStr(id, d, cutType = "online", strokeColor = COLOR_CUT_ONLINE)
+        }
 
         return buildSvg(svgW, svgH, "Inlays Sheet — ${preset.name}") {
 
@@ -561,8 +567,10 @@ class SvgGeneratorService {
                     yBottom                    = { _ -> yBottomVal },
                     centerY                    = cellCy,
                     cutPath                    = sheetCut,
+                    cutPathOnline              = sheetCutOnline,
                     fretNumber                 = entry.second.first(),
                     customPath                 = request.inlayCustomPath,
+                    customPathClosed           = request.inlayCustomClosed,
                 )
                 for (element in preset.draw(ctx)) raw(element)
             }

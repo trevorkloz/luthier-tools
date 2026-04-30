@@ -199,8 +199,13 @@ sealed class InlayPreset(
                         }
                     }
                 }
-                sb.append(" Z")
-                return ctx.cutPath(id, sb.toString())
+                if (ctx.customPathClosed) {
+                    sb.append(" Z")
+                    return ctx.cutPath(id, sb.toString())
+                }
+                // Open path → stroke (online) cut. Falls back to the regular cutPath if
+                // no online callback was provided (preserves existing behaviour).
+                return (ctx.cutPathOnline ?: ctx.cutPath).invoke(id, sb.toString())
             }
 
             return if (ctx.isDouble) {

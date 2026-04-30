@@ -25,4 +25,9 @@ class InlayShapeCtx(
     //   [cx, cy, x, y]               — quadratic Bezier (control + end, 'Q')
     //   [c1x, c1y, c2x, c2y, x, y]   — cubic Bezier (two controls + end, 'C')
     val customPath: List<List<Double>> = emptyList(),
+    // For InlayShape.CUSTOM: when true (default) the path closes via Z and uses cutPath
+    // (an "inside" pocket cut); when false the path is left open and uses cutPathOnline
+    // (an "online" stroke cut), so users can render decorative line work.
+    val customPathClosed: Boolean = true,
+    val cutPathOnline: ((String, String) -> String)? = null,
 )

@@ -37,4 +37,7 @@ data class FretRequest(
     // Polygon points for InlayShape.CUSTOM, normalized to [0,1]² (x: left→right, y: top→bottom).
     // Each entry is a 2-element list [x, y]. Empty list disables custom rendering.
     val inlayCustomPath: List<List<Double>> = emptyList(),
+    // Whether the custom shape is rendered as a closed filled area (true → "inside"
+    // pocket cut) or as an open line (false → "online" stroke cut).
+    val inlayCustomClosed: Boolean = true,
 )
