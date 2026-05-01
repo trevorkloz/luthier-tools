@@ -95,6 +95,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   bindSlider('inlayGrowHeight',     'inlayGrowHeightVal');
   bindSlider('inlayTrapezoid',      'inlayTrapezoidVal');
   bindSlider('inlayParallelogram',  'inlayParallelogramVal');
+  snapToZeroOnDblClick('inlayShrinkWidth1224',  'inlayShrinkWidth1224Val');
+  snapToZeroOnDblClick('inlayShrinkHeight1224', 'inlayShrinkHeight1224Val');
+  snapToZeroOnDblClick('inlayShrinkWidth',   'inlayShrinkWidthVal');
+  snapToZeroOnDblClick('inlayGrowHeight',    'inlayGrowHeightVal');
   snapToZeroOnDblClick('inlayTrapezoid',     'inlayTrapezoidVal');
   snapToZeroOnDblClick('inlayParallelogram', 'inlayParallelogramVal');
   refreshDimSliderDisplays();
@@ -135,6 +139,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   cpCanvas.addEventListener('mouseup',     customPathMouseUp);
   cpCanvas.addEventListener('mouseleave',  () => { customPathDrag = null; });
   cpCanvas.addEventListener('contextmenu', customPathContextMenu);
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey) { customPathCmdHeld = true; customPathUpdateCursor(); }
+  });
+  document.addEventListener('keyup', e => {
+    if (!e.metaKey && !e.ctrlKey) { customPathCmdHeld = false; customPathUpdateCursor(); }
+  });
   customPathRedraw();
 
   saveState();
@@ -258,7 +268,10 @@ let customPathPoints = [];
 let customPathArcMode = false;
 let customPathClosed = true;   // true → render filled closed area; false → open lines only
 let customPathDrag = null;     // { mode, target, downXn, downYn, moved, ... }
-const CUSTOM_PATH_VB = 100;
+let customPathCmdHeld = false; // true while Cmd (Mac) or Ctrl (Win) is pressed
+const CUSTOM_PATH_VB         = 100;
+const CUSTOM_PATH_MARGIN     = 30;                                      // extra VB units outside the window on each side
+const CUSTOM_PATH_CANVAS_VB  = CUSTOM_PATH_VB + 2 * CUSTOM_PATH_MARGIN; // 160 — total canvas VB width/height
 const CUSTOM_PATH_SNAP_DIST = 6;
 // Point-hit is intentionally bigger than segment-hit so clicks just outside a vertex's
 // visible circle still latch onto the vertex (drag intent) rather than landing on the
@@ -282,13 +295,15 @@ function customPathSegEnd(seg) {
 }
 
 function customPathEventPos(evt) {
-  const svg = document.getElementById('customPathCanvas');
+  const svg  = document.getElementById('customPathCanvas');
   const rect = svg.getBoundingClientRect();
-  const xv = ((evt.clientX - rect.left) / rect.width)  * CUSTOM_PATH_VB;
-  const yv = ((evt.clientY - rect.top)  / rect.height) * CUSTOM_PATH_VB;
+  // Map mouse into the extended viewBox space (origin at -MARGIN, total = CANVAS_VB)
+  const xv = ((evt.clientX - rect.left) / rect.width)  * CUSTOM_PATH_CANVAS_VB - CUSTOM_PATH_MARGIN;
+  const yv = ((evt.clientY - rect.top)  / rect.height) * CUSTOM_PATH_CANVAS_VB - CUSTOM_PATH_MARGIN;
+  const ext = (CUSTOM_PATH_MARGIN / CUSTOM_PATH_VB) + 0.05; // ~0.35
   return {
-    xn: Math.max(0, Math.min(CUSTOM_PATH_VB, xv)) / CUSTOM_PATH_VB,
-    yn: Math.max(0, Math.min(CUSTOM_PATH_VB, yv)) / CUSTOM_PATH_VB,
+    xn: Math.max(-ext, Math.min(1 + ext, xv / CUSTOM_PATH_VB)),
+    yn: Math.max(-ext, Math.min(1 + ext, yv / CUSTOM_PATH_VB)),
   };
 }
 
@@ -450,10 +465,31 @@ function customPathClick(evt) {
 
   // Click on existing edge: in Line mode (or on a Q segment) split it and insert a vertex.
   // In Arc mode on an L segment, promote it to a Q with the click as the control point.
+  // Cmd/Ctrl+click toggles L↔Q regardless of mode (no vertex inserted).
   // Checked BEFORE the close-to-start gesture so the first edge (which starts at the
   // start vertex) doesn't get swallowed by the close-snap radius.
   const segHit = customPathSegmentHit(x, y);
   if (segHit) {
+    const cmd = evt.metaKey || evt.ctrlKey;
+    if (cmd) {
+      if (segHit.isClosing) {
+        // Closing edge is always a straight Z — Cmd+click adds a Q arc on it.
+        customPathPoints.push([x, y, customPathPoints[0][0], customPathPoints[0][1]]);
+      } else {
+        const seg = customPathPoints[segHit.segIndex];
+        if (seg.length === 2) {
+          // L → Q: click position becomes the control handle.
+          customPathPoints[segHit.segIndex] = [x, y, seg[0], seg[1]];
+        } else if (seg.length === 4) {
+          // Q → L: drop the control point.
+          customPathPoints[segHit.segIndex] = [seg[2], seg[3]];
+        }
+        // Cubic (length 6): no-op — Cmd+click on a cubic is ignored.
+      }
+      customPathRedraw();
+      scheduleCalculate();
+      return;
+    }
     if (segHit.isClosing) {
       // Click on the implicit closing edge (last endpoint → start).
       // Line mode: insert a vertex — the closing line is split in two.
@@ -543,9 +579,25 @@ function customPathMouseDown(evt) {
   };
 }
 
+let _customPathLastXn = -1, _customPathLastYn = -1;
+function customPathUpdateCursor() {
+  if (_customPathLastXn < 0 || customPathDrag) return;
+  const svg = document.getElementById('customPathCanvas');
+  if (!svg) return;
+  const ptHit = customPathHitTest(_customPathLastXn, _customPathLastYn);
+  if (ptHit) { svg.style.cursor = 'grab'; return; }
+  if (customPathPoints.length >= 1 && customPathSegmentHit(_customPathLastXn, _customPathLastYn)) {
+    svg.style.cursor = customPathCmdHeld ? 'pointer' : 'cell';
+  } else {
+    svg.style.cursor = 'crosshair';
+  }
+}
+
 function customPathMouseMove(evt) {
   const svg = document.getElementById('customPathCanvas');
   const { xn, yn } = customPathEventPos(evt);
+  _customPathLastXn = xn;
+  _customPathLastYn = yn;
 
   if (!customPathDrag) {
     // Hover cursor: Shift-hover signals "translate" if there's a path to move.
@@ -556,7 +608,8 @@ function customPathMouseMove(evt) {
       if (ptHit) {
         svg.style.cursor = 'grab';
       } else if (customPathPoints.length >= 1 && customPathSegmentHit(xn, yn)) {
-        svg.style.cursor = 'cell';
+        // Cmd/Ctrl held over a segment → pointer signals "toggle L↔Q" instead of insert
+        svg.style.cursor = customPathCmdHeld ? 'pointer' : 'cell';
       } else {
         svg.style.cursor = 'crosshair';
       }
@@ -703,11 +756,22 @@ function customPathRedraw() {
     closedBtn.style.borderColor = customPathClosed ? '#bbdefb' : '#cfd8dc';
   }
 
-  const grid = [];
-  for (let g = 25; g < CUSTOM_PATH_VB; g += 25) {
-    grid.push(`<line x1="${g}" y1="0" x2="${g}" y2="${CUSTOM_PATH_VB}" stroke="#eceff1" stroke-width="0.4"/>`);
-    grid.push(`<line x1="0" y1="${g}" x2="${CUSTOM_PATH_VB}" y2="${g}" stroke="#eceff1" stroke-width="0.4"/>`);
-  }
+  // Background: gray outside area already set by CSS; white window rect + border
+  const M  = CUSTOM_PATH_MARGIN;
+  const VB = CUSTOM_PATH_VB;
+  const background = [
+    // white fill inside window
+    `<rect x="0" y="0" width="${VB}" height="${VB}" fill="white"/>`,
+    // grid lines (inside window only)
+    ...[25, 50, 75].flatMap(g => [
+      `<line x1="${g}" y1="0" x2="${g}" y2="${VB}" stroke="#eceff1" stroke-width="0.4"/>`,
+      `<line x1="0" y1="${g}" x2="${VB}" y2="${g}" stroke="#eceff1" stroke-width="0.4"/>`,
+    ]),
+    // dashed window border
+    `<rect x="0" y="0" width="${VB}" height="${VB}" fill="none" stroke="#90caf9" stroke-width="0.6" stroke-dasharray="2,2"/>`,
+    // clip path used by the shape preview
+    `<clipPath id="cpwin"><rect x="0" y="0" width="${VB}" height="${VB}"/></clipPath>`,
+  ];
 
   let d = '';
   if (customPathPoints.length >= 1) {
@@ -730,9 +794,9 @@ function customPathRedraw() {
 
   let shape = '';
   if (customPathClosed && customPathPoints.length >= 3) {
-    shape = `<path d="${d} Z" fill="#bbdefb" fill-opacity="0.5" stroke="#0277bd" stroke-width="0.6"/>`;
+    shape = `<path d="${d} Z" fill="#bbdefb" fill-opacity="0.5" stroke="#0277bd" stroke-width="0.6" clip-path="url(#cpwin)"/>`;
   } else if (customPathPoints.length >= 1) {
-    shape = `<path d="${d}" fill="none" stroke="#0277bd" stroke-width="0.6"/>`;
+    shape = `<path d="${d}" fill="none" stroke="#0277bd" stroke-width="0.6" clip-path="url(#cpwin)"/>`;
   }
 
   // Vertices (segment endpoints). Non-start vertices first, start last so it always
@@ -762,7 +826,7 @@ function customPathRedraw() {
          + `<rect x="${cx - 1.2}" y="${cy - 1.2}" width="2.4" height="2.4" fill="#fff" stroke="#9e9e9e" stroke-width="0.5"/>`;
   }).join('');
 
-  svg.innerHTML = grid.join('') + shape + cps + verts;
+  svg.innerHTML = background.join('') + shape + cps + verts;
 }
 
 function customPathToggleMode() {
@@ -1301,12 +1365,15 @@ function setLoading(loading) {
 //   showFretNumbers(1) showCenterLine(1) showWidthAnnotations(1)
 //   showInlays(1) doubleInlays(1) doubleOrientation(2) showBoundingBox(1)
 //   inlayShape(3) inlaySize(7) inlayHeight(7) inlayPosition(2)
-//   inlayDoubleOffset(7) inlayShrinkWidth1224(4) inlayShrinkHeight1224(4) inlayShrinkWidth(4) inlayGrowHeight(7)
+//   inlayDoubleOffset(7) inlayShrinkWidth1224(5) inlayShrinkHeight1224(5) inlayShrinkWidth(5) inlayGrowHeight(8)
 //   inlayTrapezoid(7) inlayParallelogram(7) showRadius(1) radiusValue(12) radiusSteps(4)
 //   showNutSlot(1) nutSlotWidth(5) nutSlotDistance(6)
-//   showPinholes(1) tangWidth(5) fretExtensionAmount(6)  = 143 bits
-const CONFIG_SCHEMA = [12,6,8,8,1,1,1,1,1,1,2,1,3,7,7,2,7,4,4,4,7,7,7,1,12,4,1,5,6,1,5,6];
-const CONFIG_DATA_CHARS = 28;
+//   showPinholes(1) tangWidth(5) fretExtensionAmount(6)  = 147 bits
+const CONFIG_SCHEMA = [12,6,8,8,1,1,1,1,1,1,2,1,3,7,7,2,7,5,5,5,8,7,7,1,12,4,1,5,6,1,5,6];
+// Legacy schema (codes generated before bidirectional sliders, 143 bits → 28 data chars)
+const CONFIG_SCHEMA_LEGACY = [12,6,8,8,1,1,1,1,1,1,2,1,3,7,7,2,7,4,4,4,7,7,7,1,12,4,1,5,6,1,5,6];
+const CONFIG_DATA_CHARS = 29;
+const CONFIG_DATA_CHARS_LEGACY = 28;
 const CONFIG_HASH_CHARS = 4;
 const CONFIG_CHARS      = CONFIG_DATA_CHARS + CONFIG_HASH_CHARS;
 const CONFIG_HASH_MOD   = Math.pow(36, CONFIG_HASH_CHARS); // 1,679,616
@@ -1344,10 +1411,10 @@ function encodeConfig(s) {
     Math.round(parseFloat(s.inlayHeight)       * 2),             //  7 bits  0-100 (0-50mm)
     s.inlayPosition === 'center' ? 0 : s.inlayPosition === 'top' ? 1 : 2, // 2 bits
     Math.round(parseFloat(s.inlayDoubleOffset)      * 2),         //  7 bits  0-100 (0-50mm)
-    Math.round(parseFloat(s.inlayShrinkWidth1224)  / 0.05),      //  4 bits  0-15 (0-0.75)
-    Math.round(parseFloat(s.inlayShrinkHeight1224) / 0.05),      //  4 bits  0-15 (0-0.75)
-    Math.round(parseFloat(s.inlayShrinkWidth)      / 0.25),      //  4 bits  0-8
-    Math.round(parseFloat(s.inlayGrowHeight)  / 0.1),            //  7 bits  0-100
+    Math.round(parseFloat(s.inlayShrinkWidth1224)  / 0.05) + 15, //  5 bits  0-30 (−0.75…+0.75, offset +15)
+    Math.round(parseFloat(s.inlayShrinkHeight1224) / 0.05) + 15, //  5 bits  0-30
+    Math.round(parseFloat(s.inlayShrinkWidth)      / 0.25) + 8,  //  5 bits  0-16 (−2…+2,     offset +8)
+    Math.round(parseFloat(s.inlayGrowHeight)  / 0.1) + 100,      //  8 bits  0-200 (−10…+10,  offset +100)
     parseInt(s.inlayTrapezoid) + 50,                              //  7 bits  0-100 (raw slider -50..+50 + offset)
     parseInt(s.inlayParallelogram) + 50,                          //  7 bits  0-100 (raw slider -50..+50 + offset)
     s.showRadius           ? 1 : 0,                              //  1 bit
@@ -1365,16 +1432,95 @@ function encodeConfig(s) {
     bits = (bits << BigInt(CONFIG_SCHEMA[i])) | BigInt(Math.max(0, fields[i]));
   }
   const dataStr = bits.toString(36).padStart(CONFIG_DATA_CHARS, '0');
-  return (dataStr + configHashChars(dataStr)).toUpperCase();
+  let code = (dataStr + configHashChars(dataStr)).toUpperCase();
+  if (s.inlayShape === 'custom' && Array.isArray(s.inlayCustomPath) && s.inlayCustomPath.length >= 1) {
+    const pathSuffix = encodeCustomPath(s.inlayCustomClosed !== false, s.inlayCustomPath);
+    if (pathSuffix) code += '.' + pathSuffix.toUpperCase();
+  }
+  return code;
 }
 
-function parseConfigData(dataStr) {
+// ── Custom path encoding ──────────────────────────────────────────────────────
+// Bit layout (packed into a single BigInt, then base-36):
+//   1 bit  : closed (1=filled pocket, 0=open stroke)
+//   5 bits : N = number of additional segments after start (max 31)
+//   8+8    : start point x, y  (each = round(val×255), [0-255])
+//   per segment:
+//     2 bits type: 00=L(line), 01=Q(quad bezier), 10=C(cubic bezier)
+//     coords:  L→x,y (2×8); Q→cpx,cpy,x,y (4×8); C→c1x,c1y,c2x,c2y,x,y (6×8)
+function encodeCustomPath(closed, points) {
+  if (!points || points.length < 1) return '';
+  const enc8 = v => Math.max(0, Math.min(255, Math.round(v * 255)));
+  const segs = points.slice(1);               // additional segments (after start)
+  const N    = Math.min(segs.length, 31);
+  let bits = 0n;
+  const push = (val, nbits) => { bits = (bits << BigInt(nbits)) | BigInt(val); };
+  push(closed ? 1 : 0, 1);
+  push(N, 5);
+  push(enc8(points[0][0]), 8);
+  push(enc8(points[0][1]), 8);
+  for (let i = 0; i < N; i++) {
+    const seg = segs[i];
+    if (seg.length >= 6) {
+      push(2, 2); // cubic
+      for (let j = 0; j < 6; j++) push(enc8(seg[j]), 8);
+    } else if (seg.length >= 4) {
+      push(1, 2); // quad
+      for (let j = 0; j < 4; j++) push(enc8(seg[j]), 8);
+    } else {
+      push(0, 2); // line
+      push(enc8(seg[0]), 8);
+      push(enc8(seg[1]), 8);
+    }
+  }
+  return bits.toString(36);
+}
+
+function decodeCustomPath(suffix) {
+  if (!suffix) return { closed: true, points: [] };
+  let bits = 0n;
+  for (const c of suffix.toLowerCase()) bits = bits * 36n + BigInt(parseInt(c, 36));
+  // Expand BigInt to bit array, MSB first; pad to at least header size (1+5+8+8=22)
+  const allBits = [];
+  let tmp = bits;
+  while (tmp > 0n) { allBits.unshift(Number(tmp & 1n)); tmp >>= 1n; }
+  while (allBits.length < 22) allBits.unshift(0);
+  let pos = 0;
+  const read = (n) => {
+    let v = 0;
+    for (let i = 0; i < n; i++) v = (v << 1) | (allBits[pos++] ?? 0);
+    return v;
+  };
+  const dec8 = v => v / 255;
+  try {
+    const closed = read(1) === 1;
+    const N      = read(5);
+    const sx     = dec8(read(8));
+    const sy     = dec8(read(8));
+    const points = [[sx, sy]];
+    for (let i = 0; i < N; i++) {
+      const type = read(2);
+      if (type === 2) {
+        points.push([read(8),read(8),read(8),read(8),read(8),read(8)].map(dec8));
+      } else if (type === 1) {
+        points.push([read(8),read(8),read(8),read(8)].map(dec8));
+      } else {
+        points.push([dec8(read(8)), dec8(read(8))]);
+      }
+    }
+    return { closed, points };
+  } catch (_) {
+    return { closed: true, points: [] };
+  }
+}
+
+function parseConfigData(dataStr, schema = CONFIG_SCHEMA) {
   let bits = 0n;
   for (const c of dataStr) bits = bits * 36n + BigInt(parseInt(c, 36));
-  const totalBits = CONFIG_SCHEMA.reduce((a, b) => a + b, 0);
+  const totalBits = schema.reduce((a, b) => a + b, 0);
   const vals = [];
   let shift = BigInt(totalBits);
-  for (const nbits of CONFIG_SCHEMA) {
+  for (const nbits of schema) {
     shift -= BigInt(nbits);
     vals.push(Number((bits >> shift) & ((1n << BigInt(nbits)) - 1n)));
   }
@@ -1382,22 +1528,34 @@ function parseConfigData(dataStr) {
 }
 
 function decodeConfig(raw) {
-  const code = raw.toLowerCase().replace(/\s/g, '');
-  if (code.length !== CONFIG_CHARS || !/^[0-9a-z]+$/.test(code)) throw new Error('Invalid code');
+  const full = raw.toLowerCase().replace(/\s/g, '');
+  // Split off optional custom-path suffix (separated by '.')
+  const dotIdx   = full.indexOf('.');
+  const mainCode = dotIdx >= 0 ? full.slice(0, dotIdx) : full;
+  const pathCode = dotIdx >= 0 ? full.slice(dotIdx + 1) : null;
+
+  // Accept both the current 33-char format and the legacy 32-char format (before
+  // bidirectional sliders were introduced — the four affected fields default to 0).
+  const legacy = mainCode.length === CONFIG_DATA_CHARS_LEGACY + CONFIG_HASH_CHARS;
+  const expectedLen = legacy ? CONFIG_DATA_CHARS_LEGACY + CONFIG_HASH_CHARS : CONFIG_CHARS;
+  const dataChars   = legacy ? CONFIG_DATA_CHARS_LEGACY : CONFIG_DATA_CHARS;
+  const schema      = legacy ? CONFIG_SCHEMA_LEGACY : CONFIG_SCHEMA;
+
+  if (mainCode.length !== expectedLen || !/^[0-9a-z]+$/.test(mainCode)) throw new Error('Invalid code');
 
   // Try the code as-is, then any single-char substitution. Collect unique candidates.
   const candidates = new Set();
   const tryCode = (s) => {
-    const data = s.slice(0, CONFIG_DATA_CHARS);
-    const hash = s.slice(CONFIG_DATA_CHARS);
+    const data = s.slice(0, dataChars);
+    const hash = s.slice(dataChars);
     if (configHashChars(data) === hash) candidates.add(data);
   };
-  tryCode(code);
+  tryCode(mainCode);
   if (candidates.size === 0) {
-    for (let i = 0; i < CONFIG_CHARS; i++) {
-      const orig = code[i];
+    for (let i = 0; i < expectedLen; i++) {
+      const orig = mainCode[i];
       for (const c of CONFIG_ALPHABET) {
-        if (c !== orig) tryCode(code.slice(0, i) + c + code.slice(i + 1));
+        if (c !== orig) tryCode(mainCode.slice(0, i) + c + mainCode.slice(i + 1));
       }
     }
   }
@@ -1405,9 +1563,12 @@ function decodeConfig(raw) {
   if (candidates.size > 1)  throw new Error('Ambiguous code — too many errors to correct');
   const dataStr = [...candidates][0];
 
-  const vals = parseConfigData(dataStr);
+  const vals = parseConfigData(dataStr, schema);
   const [sl,nf,nw,w12,unit,sfn,scl,swa,si,di,dO,sbb,shape,isz,ih,ip,ido,sw1224,sh1224,sw,gh,trap,para,
          showR,rv,rs,sNS,nsw,nsd,sPH,tw,fea] = vals;
+
+  const pathResult = pathCode ? decodeCustomPath(pathCode) : { closed: true, points: [] };
+
   return {
     scaleLength:          sl / 2 + 100,
     numberOfFrets:        nf,
@@ -1426,10 +1587,11 @@ function decodeConfig(raw) {
     inlayHeight:          ih  / 2,
     inlayPosition:        ip === 0 ? 'center' : ip === 1 ? 'top' : 'bottom',
     inlayDoubleOffset:     ido   / 2,
-    inlayShrinkWidth1224:  sw1224 * 0.05,
-    inlayShrinkHeight1224: sh1224 * 0.05,
-    inlayShrinkWidth:      sw    * 0.25,
-    inlayGrowHeight:      gh  * 0.1,
+    // New: signed encoding with offset. Legacy codes used 0-based (offset 0) so values stay ≥ 0.
+    inlayShrinkWidth1224:  legacy ? sw1224 * 0.05        : (sw1224 - 15) * 0.05,
+    inlayShrinkHeight1224: legacy ? sh1224 * 0.05        : (sh1224 - 15) * 0.05,
+    inlayShrinkWidth:      legacy ? sw     * 0.25        : (sw     -  8) * 0.25,
+    inlayGrowHeight:       legacy ? gh     * 0.1         : (gh     - 100) * 0.1,
     inlayTrapezoid:       trap - 50,
     inlayParallelogram:   para - 50,
     showRadius:           showR === 1,
@@ -1441,6 +1603,8 @@ function decodeConfig(raw) {
     showPinholes:         sPH === 1,
     tangWidth:            tw  * 0.1 + 0.1,
     fretExtensionAmount:  fea / 2 - 10,
+    inlayCustomPath:      pathResult.points,
+    inlayCustomClosed:    pathResult.closed,
   };
 }
 

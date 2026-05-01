@@ -158,7 +158,10 @@ sealed class InlayPreset(
             val h = if (ctx.effectiveHeight > 0.0) ctx.effectiveHeight else ctx.effectiveSize
             val hs = ctx.parallelogram * h / 2.0
 
-            fun shape(id: String, cxOff: Double, dyOff: Double): String {
+            // Returns [clipPathDef, pathElement]. The clipPath clips the cut to the
+            // axis-aligned inlay bounding box so bezier handles placed outside the
+            // drawing window don't produce cuts outside the intended inlay area.
+            fun shape(id: String, cxOff: Double, dyOff: Double): List<String> {
                 val yBase = when (ctx.position) {
                     InlayPosition.TOP    -> ctx.yTop(ctx.midDist) + dyOff
                     InlayPosition.BOTTOM -> ctx.yBottom(ctx.midDist) - h + dyOff
@@ -199,13 +202,25 @@ sealed class InlayPreset(
                         }
                     }
                 }
-                if (ctx.customPathClosed) {
+
+                val pathElem = if (ctx.customPathClosed) {
                     sb.append(" Z")
-                    return ctx.cutPath(id, sb.toString())
+                    ctx.cutPath(id, sb.toString())
+                } else {
+                    (ctx.cutPathOnline ?: ctx.cutPath).invoke(id, sb.toString())
                 }
-                // Open path → stroke (online) cut. Falls back to the regular cutPath if
-                // no online callback was provided (preserves existing behaviour).
-                return (ctx.cutPathOnline ?: ctx.cutPath).invoke(id, sb.toString())
+
+                // Clip to the tight envelope of the deformed shape. The plain [cx−w/2, yBase, w, h]
+                // box is expanded to cover parallelogram lean (±|hs| horizontally) and trapezoid
+                // height growth (up to h×(1+|trap|/2) on the taller side).
+                val absHs   = kotlin.math.abs(hs)
+                val clipX   = cx - w / 2.0 - absHs
+                val clipW   = w + 2.0 * absHs
+                val clipH   = h * (1.0 + kotlin.math.abs(ctx.trap) / 2.0)
+                val clipId  = "iclip-$id"
+                val clipDef = """<clipPath id="$clipId"><rect x="${ctx.f(clipX)}" y="${ctx.f(yBase)}" width="${ctx.f(clipW)}" height="${ctx.f(clipH)}"/></clipPath>"""
+                val clipped = pathElem.replace("<g ", """<g clip-path="url(#$clipId)" """)
+                return listOf(clipDef, clipped)
             }
 
             return if (ctx.isDouble) {
@@ -214,11 +229,11 @@ sealed class InlayPreset(
                     InlayDoubleOrientation.HORIZONTAL -> listOf(
                         shape("${ctx.baseId}a", -ho, 0.0),
                         shape("${ctx.baseId}b", +ho, 0.0)
-                    )
+                    ).flatten()
                     InlayDoubleOrientation.STAGGERED -> listOf(
                         shape("${ctx.baseId}a", -ho, -ho),
                         shape("${ctx.baseId}b", +ho, +ho)
-                    )
+                    ).flatten()
                     else -> { // VERTICAL
                         val (dy1, dy2) = when (ctx.position) {
                             InlayPosition.TOP    -> Pair(0.0, ctx.effectiveInlayDoubleOffset)
@@ -228,11 +243,11 @@ sealed class InlayPreset(
                         listOf(
                             shape("${ctx.baseId}a", 0.0, dy1),
                             shape("${ctx.baseId}b", 0.0, dy2)
-                        )
+                        ).flatten()
                     }
                 }
             } else {
-                listOf(shape(ctx.baseId, 0.0, 0.0))
+                shape(ctx.baseId, 0.0, 0.0)
             }
         }
     }

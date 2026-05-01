@@ -149,7 +149,7 @@ class SvgGeneratorService {
                     val midDist  = (prevDist + curr.distanceFromNut) / 2.0
 
                     val fretSpacing = curr.distanceFromNut - prevDist
-                    val scaleW = (1.0 - request.inlayShrinkWidth  + request.inlayShrinkWidth  * (fretSpacing / refSpacing)).coerceIn(0.01, 1.0)
+                    val scaleW = (1.0 - request.inlayShrinkWidth  + request.inlayShrinkWidth  * (fretSpacing / refSpacing)).coerceAtLeast(0.01)
                     val scaleH = (1.0 - request.inlayGrowHeight + request.inlayGrowHeight * (widthAt(midDist) / refWidth)).coerceAtLeast(0.01)
                     val scale1224W = if (inlayFret in doubleFrets) (1.0 - request.inlayShrinkWidth1224)  else 1.0
                     val scale1224H = if (inlayFret in doubleFrets) (1.0 - request.inlayShrinkHeight1224) else 1.0
@@ -448,7 +448,7 @@ class SvgGeneratorService {
             val prevDist = fretPositions.find { it.fretNumber == inlayFret - 1 }?.distanceFromNut ?: 0.0
             val midDist  = (prevDist + curr.distanceFromNut) / 2.0
             val fretSpacing = curr.distanceFromNut - prevDist
-            val scaleW = (1.0 - request.inlayShrinkWidth  + request.inlayShrinkWidth  * (fretSpacing / refSpacing)).coerceIn(0.01, 1.0)
+            val scaleW = (1.0 - request.inlayShrinkWidth  + request.inlayShrinkWidth  * (fretSpacing / refSpacing)).coerceAtLeast(0.01)
             val scaleH = (1.0 - request.inlayGrowHeight + request.inlayGrowHeight * (widthAt(midDist) / refWidth)).coerceAtLeast(0.01)
             val scale1224W = if (inlayFret in doubleFrets) (1.0 - request.inlayShrinkWidth1224)  else 1.0
             val scale1224H = if (inlayFret in doubleFrets) (1.0 - request.inlayShrinkHeight1224) else 1.0

@@ -227,12 +227,14 @@
               </div>
 
               <div id="customPathEditor" style="display:none;margin-bottom:14px">
-                <svg id="customPathCanvas" viewBox="0 0 100 100"
-                     style="width:100%;aspect-ratio:1;background:#fafafa;border:1px solid #cfd8dc;border-radius:3px;cursor:crosshair;display:block">
+                <svg id="customPathCanvas" viewBox="-30 -30 160 160"
+                     style="width:100%;aspect-ratio:1;background:#eceff1;border:1px solid #cfd8dc;border-radius:3px;cursor:crosshair;display:block">
                 </svg>
                 <div style="display:flex;gap:4px;margin-top:4px;align-items:stretch">
                   <button id="customPathModeBtn" onclick="customPathToggleMode()" type="button" title="Line segments"
                           style="flex:1;padding:3px 0;background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center"></button>
+                  <button id="customPathClosedBtn" onclick="customPathToggleClosed()" type="button" title="Closed (filled area)"
+                          style="flex:1;padding:3px 0;background:#e3f2fd;color:#0277bd;border:1px solid #bbdefb;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center"></button>
                   <button onclick="customPathRotateClick(event)" type="button" title="Rotate 15° (Shift = counter-clockwise)"
                           style="flex:1;padding:3px 0;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center"><i class="material-icons" style="font-size:14px;line-height:14px">rotate_right</i></button>
                   <button onclick="customPathClear()" type="button" title="Clear"
@@ -299,13 +301,13 @@
                 <b id="inlayDoubleOffsetVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">8.0 mm</b>
               </div>
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:0">
-                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Width shrink</span>
-                <div class="range-field" style="flex:1;margin:0"><input id="inlayShrinkWidth1224" type="range" min="0" max="0.75" step="0.05" value="0"></div>
+                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Width ± (12/24)</span>
+                <div class="range-field" style="flex:1;margin:0"><input id="inlayShrinkWidth1224" type="range" min="-0.75" max="0.75" step="0.05" value="0"></div>
                 <b id="inlayShrinkWidth1224Val" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">0.00</b>
               </div>
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:0">
-                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Height shrink</span>
-                <div class="range-field" style="flex:1;margin:0"><input id="inlayShrinkHeight1224" type="range" min="0" max="0.75" step="0.05" value="0"></div>
+                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Height ± (12/24)</span>
+                <div class="range-field" style="flex:1;margin:0"><input id="inlayShrinkHeight1224" type="range" min="-0.75" max="0.75" step="0.05" value="0"></div>
                 <b id="inlayShrinkHeight1224Val" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">0.00</b>
               </div>
             </div>
@@ -317,14 +319,14 @@
             </div>
             <div style="padding-left:14px">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:0">
-                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Width shrink</span>
-                <div class="range-field" style="flex:1;margin:0"><input id="inlayShrinkWidth" type="range" min="0" max="2" step="0.25" value="0"></div>
+                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Width scale</span>
+                <div class="range-field" style="flex:1;margin:0"><input id="inlayShrinkWidth" type="range" min="-2" max="2" step="0.25" value="0"></div>
                 <button onclick="matchInlaySlider('inlayShrinkWidth','inlayShrinkWidthVal',1)" style="font-size:.63rem;padding:1px 7px;background:#e3f2fd;color:#0277bd;border:1px solid #bbdefb;border-radius:8px;cursor:pointer;line-height:1.5;flex-shrink:0">match</button>
                 <b id="inlayShrinkWidthVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:36px;text-align:right">0.00</b>
               </div>
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:0">
-                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Height grow</span>
-                <div class="range-field" style="flex:1;margin:0"><input id="inlayGrowHeight" type="range" min="0" max="10" step="0.1" value="0"></div>
+                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Height scale</span>
+                <div class="range-field" style="flex:1;margin:0"><input id="inlayGrowHeight" type="range" min="-2" max="2" step="0.1" value="0"></div>
                 <button onclick="matchInlaySlider('inlayGrowHeight','inlayGrowHeightVal',1)" style="font-size:.63rem;padding:1px 7px;background:#e3f2fd;color:#0277bd;border:1px solid #bbdefb;border-radius:8px;cursor:pointer;line-height:1.5;flex-shrink:0">match</button>
                 <b id="inlayGrowHeightVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:36px;text-align:right">0.00</b>
               </div>
