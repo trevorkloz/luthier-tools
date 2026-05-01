@@ -145,6 +145,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.addEventListener('keyup', e => {
     if (!e.metaKey && !e.ctrlKey) { customPathCmdHeld = false; customPathUpdateCursor(); }
   });
+
+  // SVG import — file input + drag-and-drop on canvas
+  const cpFileInput = document.getElementById('customPathFileInput');
+  cpFileInput.addEventListener('change', e => {
+    const f = e.target.files[0];
+    if (f) { const r = new FileReader(); r.onload = ev => customPathImportSvg(ev.target.result); r.readAsText(f); }
+    cpFileInput.value = '';
+  });
+  cpCanvas.addEventListener('dragover',  e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+  cpCanvas.addEventListener('drop', e => {
+    e.preventDefault();
+    const f = e.dataTransfer.files[0];
+    if (f && (f.type === 'image/svg+xml' || f.name.endsWith('.svg'))) {
+      const r = new FileReader(); r.onload = ev => customPathImportSvg(ev.target.result); r.readAsText(f);
+    }
+  });
+
   customPathRedraw();
 
   saveState();
@@ -921,6 +938,264 @@ function customPathRotate(degrees) {
 
 function customPathRotateClick(evt) {
   customPathRotate(evt.shiftKey ? -15 : 15);
+}
+
+// ── SVG import ────────────────────────────────────────────────
+function customPathImportClick() {
+  document.getElementById('customPathFileInput').click();
+}
+
+function customPathImportSvg(svgText) {
+  const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+  const parseError = doc.querySelector('parsererror');
+  if (parseError) { alert('Could not parse SVG file.'); return; }
+
+  // Try to find the first <path> element; fall back to first <polyline>/<polygon>/<rect>/<circle>
+  let el = doc.querySelector('path');
+  if (!el) {
+    const poly = doc.querySelector('polyline,polygon');
+    if (poly) {
+      const pts = (poly.getAttribute('points') || '').trim().split(/[\s,]+/).map(Number);
+      const d = pts.length >= 4
+        ? 'M ' + pts[0] + ' ' + pts[1] + pts.slice(2).reduce((s, v, i) => s + (i % 2 === 0 ? ' L ' + v : ' ' + v), '') +
+          (poly.tagName === 'polygon' ? ' Z' : '')
+        : null;
+      if (!d) { alert('No supported path found in SVG.'); return; }
+      el = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+      el.setAttribute('d', d);
+    }
+  }
+  if (!el) { alert('No path element found in SVG.'); return; }
+
+  const m = svgCompositeTransform(el);
+  const segs = parseSvgD(el.getAttribute('d') || '');
+  if (segs.length < 2) { alert('Path too short to import.'); return; }
+
+  // Apply composite transform to all points
+  const tSegs = segs.map(seg => {
+    const out = [];
+    for (let i = 0; i < seg.length; i += 2) {
+      const [tx, ty] = svgApplyMatrix(m, seg[i], seg[i + 1]);
+      out.push(tx, ty);
+    }
+    return out;
+  });
+
+  const normalized = normalizeSvgPath(tSegs);
+  if (!normalized) { alert('Could not normalize path.'); return; }
+
+  customPathPoints = normalized;
+  customPathRedraw();
+  scheduleCalculate();
+}
+
+// Walk up DOM collecting transforms; return composite matrix (row-major [a,b,c,d,e,f])
+function svgCompositeTransform(el) {
+  const mats = [];
+  let node = el;
+  while (node && node.nodeType === 1) {
+    const t = node.getAttribute('transform');
+    if (t) mats.unshift(svgParseTransform(t));
+    node = node.parentNode;
+  }
+  return mats.reduce((acc, m) => svgMulMatrix(acc, m), [1, 0, 0, 1, 0, 0]);
+}
+
+function svgParseTransform(str) {
+  let m = [1, 0, 0, 1, 0, 0];
+  const re = /(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g;
+  let match;
+  while ((match = re.exec(str)) !== null) {
+    const fn = match[1];
+    const args = match[2].trim().split(/[\s,]+/).map(Number);
+    let tm;
+    if (fn === 'matrix')    { tm = args; }
+    else if (fn === 'translate') { tm = [1, 0, 0, 1, args[0] || 0, args[1] || 0]; }
+    else if (fn === 'scale')     { const sx = args[0] || 1, sy = args[1] !== undefined ? args[1] : sx; tm = [sx, 0, 0, sy, 0, 0]; }
+    else if (fn === 'rotate') {
+      const ang = (args[0] || 0) * Math.PI / 180, cx2 = args[1] || 0, cy2 = args[2] || 0;
+      const cos = Math.cos(ang), sin = Math.sin(ang);
+      tm = [cos, sin, -sin, cos, cx2 - cos * cx2 + sin * cy2, cy2 + sin * cx2 - cos * cy2];
+    }
+    else if (fn === 'skewX') { const t = Math.tan(args[0] * Math.PI / 180); tm = [1, 0, t, 1, 0, 0]; }
+    else if (fn === 'skewY') { const t = Math.tan(args[0] * Math.PI / 180); tm = [1, t, 0, 1, 0, 0]; }
+    else continue;
+    m = svgMulMatrix(m, tm);
+  }
+  return m;
+}
+
+function svgMulMatrix(a, b) {
+  return [
+    a[0]*b[0] + a[2]*b[1],
+    a[1]*b[0] + a[3]*b[1],
+    a[0]*b[2] + a[2]*b[3],
+    a[1]*b[2] + a[3]*b[3],
+    a[0]*b[4] + a[2]*b[5] + a[4],
+    a[1]*b[4] + a[3]*b[5] + a[5],
+  ];
+}
+
+function svgApplyMatrix(m, x, y) {
+  return [m[0]*x + m[2]*y + m[4], m[1]*x + m[3]*y + m[5]];
+}
+
+// Parse an SVG path d attribute; returns array of flat-coord segments:
+// [[x,y]] = start (M), [x,y] = line (L), [cpx,cpy,x,y] = Q, [c1x,c1y,c2x,c2y,x,y] = C
+// Only the first subpath is used (stops at second M or Z; Z itself = line to start)
+function parseSvgD(d) {
+  const tokens = d.trim().match(/[MmZzLlHhVvCcSsQqTtAa]|[-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?/g) || [];
+  const segs = [];
+  let i = 0;
+  let cx = 0, cy = 0, sx = 0, sy = 0;
+  let lastCmd = '', lastCp = null;
+  let started = false;
+
+  function num() { return parseFloat(tokens[i++]); }
+
+  while (i < tokens.length) {
+    const tok = tokens[i];
+    let cmd;
+    if (/[A-Za-z]/.test(tok)) { cmd = tok; i++; } else { cmd = lastCmd; }
+    lastCmd = cmd;
+
+    if (cmd === 'Z' || cmd === 'z') {
+      // Close subpath — add line back to start if not already there
+      if (started && (cx !== sx || cy !== sy)) segs.push([sx, sy]);
+      break; // first subpath done
+    }
+    if ((cmd === 'M' || cmd === 'm') && started) break; // second subpath
+
+    const rel = cmd === cmd.toLowerCase();
+
+    const addL = (x, y) => { cx = x; cy = y; segs.push([x, y]); lastCp = null; };
+    const addQ = (qcx, qcy, x, y) => { cx = x; cy = y; lastCp = [qcx, qcy]; segs.push([qcx, qcy, x, y]); };
+    const addC = (c1x, c1y, c2x, c2y, x, y) => { cx = x; cy = y; lastCp = [c2x, c2y]; segs.push([c1x, c1y, c2x, c2y, x, y]); };
+
+    if (cmd === 'M' || cmd === 'm') {
+      const x = num() + (rel && started ? cx : 0);
+      const y = num() + (rel && started ? cy : 0);
+      cx = x; cy = y; sx = x; sy = y;
+      if (!started) { segs.push([x, y]); started = true; }
+      else { addL(x, y); }
+      lastCmd = rel ? 'l' : 'L'; // implicit lineto after M
+    } else if (cmd === 'L' || cmd === 'l') {
+      addL(num() + (rel ? cx : 0), num() + (rel ? cy : 0));
+    } else if (cmd === 'H' || cmd === 'h') {
+      addL(num() + (rel ? cx : 0), cy);
+    } else if (cmd === 'V' || cmd === 'v') {
+      addL(cx, num() + (rel ? cy : 0));
+    } else if (cmd === 'Q' || cmd === 'q') {
+      const qcx = num() + (rel ? cx : 0), qcy = num() + (rel ? cy : 0);
+      const x   = num() + (rel ? cx : 0), y   = num() + (rel ? cy : 0);
+      addQ(qcx, qcy, x, y);
+    } else if (cmd === 'T' || cmd === 't') {
+      const qcx = lastCp ? 2*cx - lastCp[0] : cx;
+      const qcy = lastCp ? 2*cy - lastCp[1] : cy;
+      addQ(qcx, qcy, num() + (rel ? cx : 0), num() + (rel ? cy : 0));
+    } else if (cmd === 'C' || cmd === 'c') {
+      const c1x = num() + (rel ? cx : 0), c1y = num() + (rel ? cy : 0);
+      const c2x = num() + (rel ? cx : 0), c2y = num() + (rel ? cy : 0);
+      const x   = num() + (rel ? cx : 0), y   = num() + (rel ? cy : 0);
+      addC(c1x, c1y, c2x, c2y, x, y);
+    } else if (cmd === 'S' || cmd === 's') {
+      const c1x = lastCp ? 2*cx - lastCp[0] : cx;
+      const c1y = lastCp ? 2*cy - lastCp[1] : cy;
+      const c2x = num() + (rel ? cx : 0), c2y = num() + (rel ? cy : 0);
+      const x   = num() + (rel ? cx : 0), y   = num() + (rel ? cy : 0);
+      addC(c1x, c1y, c2x, c2y, x, y);
+    } else if (cmd === 'A' || cmd === 'a') {
+      const rx = Math.abs(num()), ry = Math.abs(num());
+      const xRot = num(), large = num() !== 0, sweep = num() !== 0;
+      const x = num() + (rel ? cx : 0), y = num() + (rel ? cy : 0);
+      const arcs = svgArcToCubics(cx, cy, rx, ry, xRot, large, sweep, x, y);
+      arcs.forEach(([c1x, c1y, c2x, c2y, ex, ey]) => addC(c1x, c1y, c2x, c2y, ex, ey));
+    } else {
+      i++; // unknown — skip token
+    }
+  }
+  return segs;
+}
+
+// Convert SVG arc to one or more cubic bezier segments (SVG spec Appendix B)
+function svgArcToCubics(x1, y1, rx, ry, xRotDeg, largeArc, sweep, x2, y2) {
+  if (x1 === x2 && y1 === y2) return [];
+  if (rx === 0 || ry === 0) return [[x1, y1, x2, y2, x2, y2]];
+
+  const phi  = xRotDeg * Math.PI / 180;
+  const cosp = Math.cos(phi), sinp = Math.sin(phi);
+
+  const mx = (x1 - x2) / 2, my = (y1 - y2) / 2;
+  const x1p =  cosp * mx + sinp * my;
+  const y1p = -sinp * mx + cosp * my;
+
+  let rx2 = rx * rx, ry2 = ry * ry;
+  const x1p2 = x1p * x1p, y1p2 = y1p * y1p;
+  const lam = x1p2 / rx2 + y1p2 / ry2;
+  if (lam > 1) { const s = Math.sqrt(lam); rx *= s; ry *= s; rx2 = rx*rx; ry2 = ry*ry; }
+
+  const num1 = rx2*ry2 - rx2*y1p2 - ry2*x1p2;
+  const den  = rx2*y1p2 + ry2*x1p2;
+  const sq   = Math.sqrt(Math.max(0, num1 / den));
+  const k    = (largeArc === sweep ? -1 : 1) * sq;
+  const cxp  = k * rx * y1p / ry;
+  const cyp  = -k * ry * x1p / rx;
+
+  const cx   = cosp*cxp - sinp*cyp + (x1+x2)/2;
+  const cy   = sinp*cxp + cosp*cyp + (y1+y2)/2;
+
+  const ux = (x1p - cxp) / rx, uy = (y1p - cyp) / ry;
+  const vx = (-x1p - cxp) / rx, vy = (-y1p - cyp) / ry;
+
+  const dot = ux*vx + uy*vy;
+  let da = Math.acos(Math.max(-1, Math.min(1, dot / Math.sqrt((ux*ux+uy*uy)*(vx*vx+vy*vy)))));
+  if (ux*vy - uy*vx < 0) da = -da;
+  if (sweep && da < 0) da += 2*Math.PI;
+  if (!sweep && da > 0) da -= 2*Math.PI;
+
+  const ang1 = Math.atan2(uy, ux);
+  const nSegs = Math.max(1, Math.ceil(Math.abs(da) / (Math.PI / 2)));
+  const dt = da / nSegs;
+
+  const cubics = [];
+  for (let s = 0; s < nSegs; s++) {
+    const a1 = ang1 + s * dt, a2 = ang1 + (s + 1) * dt;
+    const alpha = Math.sin(dt) * (Math.sqrt(4 + 3*Math.tan(dt/2)*Math.tan(dt/2)) - 1) / 3;
+    const ex1 = Math.cos(a1), ey1 = Math.sin(a1);
+    const ex2 = Math.cos(a2), ey2 = Math.sin(a2);
+    // P1, P2 on rotated ellipse; control points via tangent direction
+    const c1x = cx + cosp*(rx*(ex1 - alpha*ey1)) - sinp*(ry*(ey1 + alpha*ex1));
+    const c1y = cy + sinp*(rx*(ex1 - alpha*ey1)) + cosp*(ry*(ey1 + alpha*ex1));
+    const c2x = cx + cosp*(rx*(ex2 + alpha*ey2)) - sinp*(ry*(ey2 - alpha*ex2));
+    const c2y = cy + sinp*(rx*(ex2 + alpha*ey2)) + cosp*(ry*(ey2 - alpha*ex2));
+    const epx = cx + cosp*rx*ex2 - sinp*ry*ey2;
+    const epy = cy + sinp*rx*ex2 + cosp*ry*ey2;
+    cubics.push([c1x, c1y, c2x, c2y, epx, epy]);
+  }
+  return cubics;
+}
+
+// Scale/translate all segments to fit [0,1]² using bounding box of endpoints only
+function normalizeSvgPath(segs) {
+  if (!segs.length) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const seg of segs) {
+    const x = seg[seg.length - 2], y = seg[seg.length - 1];
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  const w = maxX - minX, h = maxY - minY;
+  if (w < 1e-9 && h < 1e-9) return null;
+  const scale = 1.0 / Math.max(w, h);
+  const offX = (1.0 - w * scale) / 2 - minX * scale;
+  const offY = (1.0 - h * scale) / 2 - minY * scale;
+  return segs.map(seg => {
+    const out = [];
+    for (let i = 0; i < seg.length; i += 2) {
+      out.push(seg[i] * scale + offX, seg[i+1] * scale + offY);
+    }
+    return out;
+  });
 }
 
 function toggleInlayGroup(header) {
