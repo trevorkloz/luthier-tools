@@ -24,7 +24,8 @@ let customPathClosed = true;   // true → render filled closed area; false → 
 let customPathDrag = null;     // { mode, target, downXn, downYn, moved, ... }
 let customPathCmdHeld = false; // true while Cmd (Mac) or Ctrl (Win) is pressed
 let customPathSnapGrid = false;
-let customPathGridStep = 0.1; // normalized grid step when snap is active (default: 10 divisions)
+let customPathGridStep  = 0.1; // normalized grid step when snap is active (default: 10 divisions)
+let customPathEdgeTaper = 0;   // shear slope: normalized y-shift per unit x, from fretboard taper
 const CUSTOM_PATH_VB         = 100;
 const CUSTOM_PATH_MARGIN     = 30;                                       // extra VB units around the window on each side
 const CUSTOM_PATH_CANVAS_VB  = CUSTOM_PATH_VB + 2 * CUSTOM_PATH_MARGIN; // 160 — total canvas VB width/height
@@ -168,7 +169,9 @@ function customPathEventPos(evt) {
   const [vx0, vy0, vw, vh] = _cpViewBox;
   const xv = vx0 + (evt.clientX - rect.left) / rect.width  * vw;
   const yv = vy0 + (evt.clientY - rect.top)  / rect.height * vh;
-  return { xn: xv / CUSTOM_PATH_VB, yn: yv / CUSTOM_PATH_VB };
+  const xn = xv / CUSTOM_PATH_VB;
+  const yn = yv / CUSTOM_PATH_VB - customPathEdgeTaper * xn; // un-shear: invert the boundary tilt
+  return { xn, yn };
 }
 
 // Build the full list of hit-testable targets.
@@ -802,6 +805,9 @@ function customPathRedraw() {
   // The shape is NOT clipped to this border — it can extend into the gray margin area.
   const M  = CUSTOM_PATH_MARGIN;
   const VB = CUSTOM_PATH_VB;
+  // Shear helpers: T is the taper slope; nXY maps normalized (px,py) → SVG (x,y).
+  const T   = customPathEdgeTaper;
+  const nXY = (px, py) => [px * VB, (py + T * px) * VB];
   // When snap is active, draw fine grid lines at the current customPathGridStep.
   // Skip positions that coincide with the quarter-grid at 25, 50, 75.
   const snapGridLines = customPathSnapGrid
@@ -813,21 +819,21 @@ function customPathRedraw() {
           const gr = Math.round(g * 1000) / 1000;
           if (quarterSet.has(Math.round(gr))) continue;
           lines.push(
-            `<line x1="${gr}" y1="0" x2="${gr}" y2="${VB}" stroke="#eceff1" stroke-width="${swFine}"/>`,
-            `<line x1="0" y1="${gr}" x2="${VB}" y2="${gr}" stroke="#eceff1" stroke-width="${swFine}"/>`,
+            `<line x1="${gr}" y1="${T*gr}" x2="${gr}" y2="${VB + T*gr}" stroke="#eceff1" stroke-width="${swFine}"/>`,
+            `<line x1="0" y1="${gr}" x2="${VB}" y2="${gr + T*VB}" stroke="#eceff1" stroke-width="${swFine}"/>`,
           );
         }
         return lines;
       })()
     : [];
   const background = [
-    `<rect x="0" y="0" width="${VB}" height="${VB}" fill="white"/>`,
+    `<polygon points="0,0 ${VB},${T*VB} ${VB},${(1+T)*VB} 0,${VB}" fill="white"/>`,
     ...snapGridLines,
     ...[25, 50, 75].flatMap(g => [
-      `<line x1="${g}" y1="0" x2="${g}" y2="${VB}" stroke="#eceff1" stroke-width="${swQ}"/>`,
-      `<line x1="0" y1="${g}" x2="${VB}" y2="${g}" stroke="#eceff1" stroke-width="${swQ}"/>`,
+      `<line x1="${g}" y1="${T*g}" x2="${g}" y2="${VB + T*g}" stroke="#eceff1" stroke-width="${swQ}"/>`,
+      `<line x1="0" y1="${g}" x2="${VB}" y2="${g + T*VB}" stroke="#eceff1" stroke-width="${swQ}"/>`,
     ]),
-    `<rect x="0" y="0" width="${VB}" height="${VB}" fill="none" stroke="#90caf9" stroke-width="${swBrd}" stroke-dasharray="${daBrd},${daBrd}"/>`,
+    `<path d="M 0 0 L ${VB} ${T*VB} L ${VB} ${(1+T)*VB} L 0 ${VB} Z" fill="none" stroke="#90caf9" stroke-width="${swBrd}" stroke-dasharray="${daBrd},${daBrd}"/>`,
   ];
 
   // Build the combined SVG path d — one M…[Z] block per subpath.
@@ -836,15 +842,22 @@ function customPathRedraw() {
   for (const sp of customPathPoints) {
     if (sp.length < 1) continue;
     const [sx, sy] = sp[0];
-    d += (d ? ' ' : '') + `M ${sx * VB} ${sy * VB}`;
+    const [mxs, mys] = nXY(sx, sy);
+    d += (d ? ' ' : '') + `M ${mxs} ${mys}`;
     for (let i = 1; i < sp.length; i++) {
       const seg = sp[i];
       if (seg.length === 2) {
-        d += ` L ${seg[0] * VB} ${seg[1] * VB}`;
+        const [lx, ly] = nXY(seg[0], seg[1]);
+        d += ` L ${lx} ${ly}`;
       } else if (seg.length === 4) {
-        d += ` Q ${seg[0] * VB} ${seg[1] * VB} ${seg[2] * VB} ${seg[3] * VB}`;
+        const [qcx, qcy] = nXY(seg[0], seg[1]);
+        const [qx,  qy ] = nXY(seg[2], seg[3]);
+        d += ` Q ${qcx} ${qcy} ${qx} ${qy}`;
       } else if (seg.length === 6) {
-        d += ` C ${seg[0] * VB} ${seg[1] * VB} ${seg[2] * VB} ${seg[3] * VB} ${seg[4] * VB} ${seg[5] * VB}`;
+        const [c1x, c1y] = nXY(seg[0], seg[1]);
+        const [c2x, c2y] = nXY(seg[2], seg[3]);
+        const [ex,  ey ] = nXY(seg[4], seg[5]);
+        d += ` C ${c1x} ${c1y} ${c2x} ${c2y} ${ex} ${ey}`;
       }
     }
     if (customPathClosed && sp.length >= 3) d += ' Z';
@@ -868,12 +881,14 @@ function customPathRedraw() {
     const opacity  = isActive ? 1.0 : 0.35;
     for (let i = 1; i < sp.length; i++) {
       const [vx, vy] = customPathSegEnd(sp[i]);
-      verts += `<circle cx="${vx * VB}" cy="${vy * VB}" r="${rVert}" fill="#fff" stroke="#0277bd" stroke-width="${swVert}" opacity="${opacity}"/>`;
+      const [vxs, vys] = nXY(vx, vy);
+      verts += `<circle cx="${vxs}" cy="${vys}" r="${rVert}" fill="#fff" stroke="#0277bd" stroke-width="${swVert}" opacity="${opacity}"/>`;
     }
     if (sp.length > 0) {
       const [sx2, sy2] = sp[0];
+      const [sxs, sys] = nXY(sx2, sy2);
       const startFill  = isActive ? '#0277bd' : '#90caf9'; // solid blue for active start, lighter for inactive
-      verts += `<circle cx="${sx2 * VB}" cy="${sy2 * VB}" r="${rVert}" fill="${startFill}" stroke="#0277bd" stroke-width="${swVert}" opacity="${opacity}" title="Subpath ${si + 1}"/>`;
+      verts += `<circle cx="${sxs}" cy="${sys}" r="${rVert}" fill="${startFill}" stroke="#0277bd" stroke-width="${swVert}" opacity="${opacity}" title="Subpath ${si + 1}"/>`;
     }
   }
 
@@ -883,9 +898,10 @@ function customPathRedraw() {
   const cps = activeSp.map((seg, i) => {
     if (seg.length !== 4 || i === 0) return '';
     const prevEnd = customPathSegEnd(activeSp[i - 1]);
-    const cpx = seg[0] * VB, cpy = seg[1] * VB;
-    const ex  = seg[2] * VB, ey  = seg[3] * VB;
-    return `<line x1="${prevEnd[0] * VB}" y1="${prevEnd[1] * VB}" x2="${cpx}" y2="${cpy}" stroke="#cfd8dc" stroke-width="${swArm}" stroke-dasharray="${daArm},${daArm}"/>`
+    const [prevXs, prevYs] = nXY(prevEnd[0], prevEnd[1]);
+    const [cpx, cpy] = nXY(seg[0], seg[1]);
+    const [ex,  ey ] = nXY(seg[2], seg[3]);
+    return `<line x1="${prevXs}" y1="${prevYs}" x2="${cpx}" y2="${cpy}" stroke="#cfd8dc" stroke-width="${swArm}" stroke-dasharray="${daArm},${daArm}"/>`
          + `<line x1="${ex}" y1="${ey}" x2="${cpx}" y2="${cpy}" stroke="#cfd8dc" stroke-width="${swArm}" stroke-dasharray="${daArm},${daArm}"/>`
          + `<rect x="${cpx - sqHalf}" y="${cpy - sqHalf}" width="${sqHalf * 2}" height="${sqHalf * 2}" fill="#fff" stroke="#9e9e9e" stroke-width="${swSq}"/>`;
   }).join('');
@@ -922,6 +938,11 @@ function customPathToggleMode()   { customPathSetMode(!customPathArcMode); }
 function customPathToggleClosed() { customPathSetClosed(!customPathClosed); }
 function customPathToggleSnap()   { customPathSnapGrid = !customPathSnapGrid; customPathRedraw(); }
 
+function customPathSetEdgeTaper(slope) {
+  customPathEdgeTaper = slope;
+  customPathRedraw();
+}
+
 function customPathSetGridStep(step) {
   customPathGridStep = step;
   const sel = document.getElementById('cpGridStepSel');
@@ -938,9 +959,12 @@ function customPathMouseLeave() {
 
 function customPathWheel(evt) {
   evt.preventDefault();
-  const { xn, yn } = customPathEventPos(evt);
-  const svgX    = xn * CUSTOM_PATH_VB;
-  const svgY    = yn * CUSTOM_PATH_VB;
+  // Pivot in raw SVG space (the viewBox coordinate space, not the sheared normalized space).
+  const svg  = document.getElementById('customPathCanvas');
+  const rect = svg.getBoundingClientRect();
+  const [vx0, vy0, vw, vh] = _cpViewBox;
+  const svgX    = vx0 + (evt.clientX - rect.left) / rect.width  * vw;
+  const svgY    = vy0 + (evt.clientY - rect.top)  / rect.height * vh;
   const factor  = evt.deltaY < 0 ? 1.25 : 1 / 1.25;
   const newZoom = Math.max(0.15, Math.min(40, _cpZoom * factor));
   // Keep the point under the cursor fixed in SVG space.

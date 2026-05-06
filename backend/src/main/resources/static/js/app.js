@@ -338,6 +338,7 @@ function refreshDimSliderDisplays() {
 function scheduleCalculate() {
   saveState();
   publishLightingSync();
+  if (typeof customPathSetEdgeTaper === 'function') customPathSetEdgeTaper(computeEdgeTaper());
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(calculate, 350);
 }
@@ -460,6 +461,30 @@ function applyDarkThemeToSvg(svgStr) {
     ['#44739c', '#888888'],  // any remaining cut color (fallback)
   ]);
   return result.replace(/#[0-9a-f]{6}/gi, m => guideColorMap.get(m.toLowerCase()) ?? m);
+}
+
+// Returns the normalized y-slope of the fretboard boundary edge across the inlay width.
+// Used to shear the custom path editor so the bounding box reflects the physical taper.
+// positive = bottom-positioned (edge goes down toward heel); negative = top-positioned (edge goes up).
+// CENTER returns 0 (no taper — the center line is flat).
+function computeEdgeTaper() {
+  const unit     = document.getElementById('unit')?.value ?? 'mm';
+  const toMm     = v => unit === 'inch' ? v * MM_PER_IN : v;
+  const scale    = toMm(parseFloat(document.getElementById('scaleLength')?.value));
+  const nutW     = toMm(parseFloat(document.getElementById('nutWidth')?.value));
+  const w12      = toMm(parseFloat(document.getElementById('width12thFret')?.value));
+  const iSize    = parseFloat(document.getElementById('inlaySize')?.value);
+  const iH       = parseFloat(document.getElementById('inlayHeight')?.value);
+  const position = document.getElementById('inlayPosition')?.value ?? 'center';
+  if (position === 'center') return 0;
+  if ([scale, nutW, w12, iSize, iH].some(isNaN) || scale <= 0 || iH <= 0) return 0;
+  const wideEnd   = 2 * w12 - nutW;
+  const taperRate = (wideEnd - nutW) / scale;
+  const refMid    = scale / 2;                         // fret 12 as reference
+  const wLeft     = nutW + taperRate * (refMid - iSize / 2);
+  const wRight    = nutW + taperRate * (refMid + iSize / 2);
+  const halfDelta = (wRight - wLeft) / 2;              // how much one edge moves across inlay width
+  return (position === 'top' ? -halfDelta : +halfDelta) / iH;
 }
 
 function setPreviewDarkMode(dark) {

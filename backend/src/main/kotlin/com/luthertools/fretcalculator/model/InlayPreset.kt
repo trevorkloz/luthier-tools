@@ -163,17 +163,23 @@ sealed class InlayPreset(
             // (e.g. the inner triangle of a letter "A").
             val edgeMargin = ctx.edgePad - ctx.effectiveSize / 2.0
             fun shape(id: String, cxOff: Double, dyOff: Double): List<String> {
-                val yBase = when (ctx.position) {
-                    InlayPosition.TOP    -> ctx.yTop(ctx.midDist) + edgeMargin + dyOff
-                    InlayPosition.BOTTOM -> ctx.yBottom(ctx.midDist) - h - edgeMargin + dyOff
-                    else                 -> ctx.centerY - h / 2.0 + dyOff
-                }
                 val cx = ctx.cx + cxOff
+
+                // Evaluate the reference edge y at the actual fret distance of each normalized x,
+                // so the custom shape tracks the fretboard taper exactly like Rectangle does.
+                fun yBaseAt(px: Double): Double {
+                    val d = ctx.midDist + (px - 0.5) * w
+                    return when (ctx.position) {
+                        InlayPosition.TOP    -> ctx.yTop(d)    + edgeMargin      + dyOff
+                        InlayPosition.BOTTOM -> ctx.yBottom(d) - h - edgeMargin  + dyOff
+                        else                 -> ctx.centerY    - h / 2.0         + dyOff
+                    }
+                }
 
                 fun tx(px: Double, py: Double): Pair<Double, Double> {
                     val trapScale = (1.0 + ctx.trap * (px - 0.5)).coerceAtLeast(0.01)
                     val xLocal    = cx + (px - 0.5) * w
-                    val yLocal    = yBase + py * h * trapScale
+                    val yLocal    = yBaseAt(px) + py * h * trapScale
                     return Pair(xLocal + hs * (1.0 - 2.0 * py), yLocal)
                 }
 
