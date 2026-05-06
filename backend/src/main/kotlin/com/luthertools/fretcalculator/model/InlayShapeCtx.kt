@@ -19,12 +19,10 @@ class InlayShapeCtx(
     val centerY: Double,
     val cutPath: (String, String) -> String,
     val fretNumber: Int = 0,
-    // Custom polygon segments. Each entry is a flat list of normalized [0,1] coords:
-    //   [x, y]                       — first entry: start point (treated as 'M')
-    //   [x, y]                       — subsequent: line to (treated as 'L')
-    //   [cx, cy, x, y]               — quadratic Bezier (control + end, 'Q')
-    //   [c1x, c1y, c2x, c2y, x, y]   — cubic Bezier (two controls + end, 'C')
-    val customPath: List<List<Double>> = emptyList(),
+    // Custom path subpaths. Each outer entry is one subpath (closed independently with Z);
+    // inner entries are segments: [x,y] = start/line, [cx,cy,x,y] = Q, [c1x,c1y,c2x,c2y,x,y] = C.
+    // Multiple subpaths with fill-rule evenodd produce holes (e.g. letter "A" with its inner triangle).
+    val customPath: List<List<List<Double>>> = emptyList(),
     // For InlayShape.CUSTOM: when true (default) the path closes via Z and uses cutPath
     // (an "inside" pocket cut); when false the path is left open and uses cutPathOnline
     // (an "online" stroke cut), so users can render decorative line work.

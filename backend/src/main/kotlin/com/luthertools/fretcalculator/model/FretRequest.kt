@@ -15,6 +15,7 @@ data class FretRequest(
     val inlaySize: Double = 6.0,
     val inlayHeight: Double = 4.0,
     val inlayPosition: InlayPosition = InlayPosition.CENTER,
+    val inlayEdgeMargin: Double = 1.5,
     val inlayDoubleOffset: Double = 8.0,
     val inlayShrinkWidth1224: Double = 0.0,
     val inlayShrinkHeight1224: Double = 0.0,
@@ -34,9 +35,10 @@ data class FretRequest(
     val tangWidth: Double = 0.6,
     val fretExtensionAmount: Double = 0.0,
     val inlayDoubleOrientation: InlayDoubleOrientation = InlayDoubleOrientation.VERTICAL,
-    // Polygon points for InlayShape.CUSTOM, normalized to [0,1]² (x: left→right, y: top→bottom).
-    // Each entry is a 2-element list [x, y]. Empty list disables custom rendering.
-    val inlayCustomPath: List<List<Double>> = emptyList(),
+    // Subpaths for InlayShape.CUSTOM, normalized to [0,1]². Each outer entry is one subpath;
+    // inner entries are segments: [x,y] = line, [cx,cy,x,y] = Q bezier, [c1x,c1y,c2x,c2y,x,y] = C bezier.
+    // Multiple subpaths with fill-rule evenodd produce correct holes (e.g. letter "A").
+    val inlayCustomPath: List<List<List<Double>>> = emptyList(),
     // Whether the custom shape is rendered as a closed filled area (true → "inside"
     // pocket cut) or as an open line (false → "online" stroke cut).
     val inlayCustomClosed: Boolean = true,

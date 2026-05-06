@@ -31,10 +31,10 @@ fun Double.f1(): String = String.format(Locale.US, "%.1f", this)
 // ── Shaper cut colors and stroke widths ──────────────────────────────────────
 // All four cut types currently render in the same grey so Shaper Origin
 // recognises them; give each its own constant for easy independent adjustment.
-const val COLOR_CUT_POCKET  = "#23a253"
-const val COLOR_CUT_ONLINE  = "#23a253"
-const val COLOR_CUT_INSIDE  = "#23a253"
-const val COLOR_CUT_OUTSIDE = "#23a253"
+const val COLOR_CUT_POCKET  = "#44739c"
+const val COLOR_CUT_ONLINE  = "#44739c"
+const val COLOR_CUT_INSIDE  = "#44739c"
+const val COLOR_CUT_OUTSIDE = "#44739c"
 const val STROKE_SHAPER_CUT = 0.5       // online / inside / outside path stroke width
 
 // ── Shaper cuts for fretboard radius ─────────────────────────────────────────

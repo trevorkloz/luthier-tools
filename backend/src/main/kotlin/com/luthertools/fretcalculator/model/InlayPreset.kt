@@ -70,25 +70,26 @@ sealed class InlayPreset(
                 val dR = d + hw
                 val xL = cx - hw
                 val xR = cx + hw
+                val em = ctx.edgePad - hw
                 return when (ctx.position) {
                     InlayPosition.TOP -> {
                         val hL = (h * (1.0 - tr * 0.5)).coerceAtLeast(0.01)
                         val hR = h * (1.0 + tr * 0.5)
                         ctx.cutPath(id,
-                            "M ${ctx.f(xL + hs)} ${ctx.f(ctx.yTop(dL) + dy)} " +
-                            "L ${ctx.f(xR + hs)} ${ctx.f(ctx.yTop(dR) + dy)} " +
-                            "L ${ctx.f(xR - hs)} ${ctx.f(ctx.yTop(dR) + hR + dy)} " +
-                            "L ${ctx.f(xL - hs)} ${ctx.f(ctx.yTop(dL) + hL + dy)} Z"
+                            "M ${ctx.f(xL + hs)} ${ctx.f(ctx.yTop(dL) + em + dy)} " +
+                            "L ${ctx.f(xR + hs)} ${ctx.f(ctx.yTop(dR) + em + dy)} " +
+                            "L ${ctx.f(xR - hs)} ${ctx.f(ctx.yTop(dR) + hR + em + dy)} " +
+                            "L ${ctx.f(xL - hs)} ${ctx.f(ctx.yTop(dL) + hL + em + dy)} Z"
                         )
                     }
                     InlayPosition.BOTTOM -> {
                         val hL = (h * (1.0 - tr * 0.5)).coerceAtLeast(0.01)
                         val hR = h * (1.0 + tr * 0.5)
                         ctx.cutPath(id,
-                            "M ${ctx.f(xL + hs)} ${ctx.f(ctx.yBottom(dL) - hL + dy)} " +
-                            "L ${ctx.f(xR + hs)} ${ctx.f(ctx.yBottom(dR) - hR + dy)} " +
-                            "L ${ctx.f(xR - hs)} ${ctx.f(ctx.yBottom(dR) + dy)} " +
-                            "L ${ctx.f(xL - hs)} ${ctx.f(ctx.yBottom(dL) + dy)} Z"
+                            "M ${ctx.f(xL + hs)} ${ctx.f(ctx.yBottom(dL) - hL - em + dy)} " +
+                            "L ${ctx.f(xR + hs)} ${ctx.f(ctx.yBottom(dR) - hR - em + dy)} " +
+                            "L ${ctx.f(xR - hs)} ${ctx.f(ctx.yBottom(dR) - em + dy)} " +
+                            "L ${ctx.f(xL - hs)} ${ctx.f(ctx.yBottom(dL) - em + dy)} Z"
                         )
                     }
                     else -> {
@@ -150,21 +151,21 @@ sealed class InlayPreset(
     //   - parallelogram: horizontal shift hs = parallelogram * h / 2, by (1 - 2*py)
     data object Custom : InlayPreset(InlayShape.CUSTOM, "Custom") {
         override fun draw(ctx: InlayShapeCtx): List<String> {
-            val segs = ctx.customPath
-            if (segs.size < 3) return emptyList()
-            if (segs[0].size != 2) return emptyList()
+            val subpaths = ctx.customPath
+            if (subpaths.isEmpty() || subpaths.all { it.size < 2 }) return emptyList()
 
             val w = ctx.effectiveSize
             val h = if (ctx.effectiveHeight > 0.0) ctx.effectiveHeight else ctx.effectiveSize
             val hs = ctx.parallelogram * h / 2.0
 
-            // Returns [clipPathDef, pathElement]. The clipPath clips the cut to the
-            // axis-aligned inlay bounding box so bezier handles placed outside the
-            // drawing window don't produce cuts outside the intended inlay area.
+            // Builds one SVG path element combining all subpaths (multiple M…Z blocks).
+            // Multiple closed subpaths with even-odd winding produce correct holes
+            // (e.g. the inner triangle of a letter "A").
+            val edgeMargin = ctx.edgePad - ctx.effectiveSize / 2.0
             fun shape(id: String, cxOff: Double, dyOff: Double): List<String> {
                 val yBase = when (ctx.position) {
-                    InlayPosition.TOP    -> ctx.yTop(ctx.midDist) + dyOff
-                    InlayPosition.BOTTOM -> ctx.yBottom(ctx.midDist) - h + dyOff
+                    InlayPosition.TOP    -> ctx.yTop(ctx.midDist) + edgeMargin + dyOff
+                    InlayPosition.BOTTOM -> ctx.yBottom(ctx.midDist) - h - edgeMargin + dyOff
                     else                 -> ctx.centerY - h / 2.0 + dyOff
                 }
                 val cx = ctx.cx + cxOff
@@ -177,50 +178,46 @@ sealed class InlayPreset(
                 }
 
                 val sb = StringBuilder()
-                val (sx, sy) = tx(segs[0][0], segs[0][1])
-                sb.append("M ").append(ctx.f(sx)).append(' ').append(ctx.f(sy))
-                for (i in 1 until segs.size) {
-                    val seg = segs[i]
-                    when (seg.size) {
-                        2 -> {
-                            val (x, y) = tx(seg[0], seg[1])
-                            sb.append(" L ").append(ctx.f(x)).append(' ').append(ctx.f(y))
-                        }
-                        4 -> {
-                            val (qcx, qcy) = tx(seg[0], seg[1])
-                            val (qx, qy)   = tx(seg[2], seg[3])
-                            sb.append(" Q ").append(ctx.f(qcx)).append(' ').append(ctx.f(qcy))
-                              .append(' ').append(ctx.f(qx)).append(' ').append(ctx.f(qy))
-                        }
-                        6 -> {
-                            val (c1x, c1y) = tx(seg[0], seg[1])
-                            val (c2x, c2y) = tx(seg[2], seg[3])
-                            val (cx2, cy2) = tx(seg[4], seg[5])
-                            sb.append(" C ").append(ctx.f(c1x)).append(' ').append(ctx.f(c1y))
-                              .append(' ').append(ctx.f(c2x)).append(' ').append(ctx.f(c2y))
-                              .append(' ').append(ctx.f(cx2)).append(' ').append(ctx.f(cy2))
+                for (segs in subpaths) {
+                    if (segs.size < 2) continue
+                    val (sx, sy) = tx(segs[0][0], segs[0][1])
+                    sb.append("M ").append(ctx.f(sx)).append(' ').append(ctx.f(sy))
+                    for (i in 1 until segs.size) {
+                        val seg = segs[i]
+                        when (seg.size) {
+                            2 -> {
+                                val (x, y) = tx(seg[0], seg[1])
+                                sb.append(" L ").append(ctx.f(x)).append(' ').append(ctx.f(y))
+                            }
+                            4 -> {
+                                val (qcx, qcy) = tx(seg[0], seg[1])
+                                val (qx, qy)   = tx(seg[2], seg[3])
+                                sb.append(" Q ").append(ctx.f(qcx)).append(' ').append(ctx.f(qcy))
+                                  .append(' ').append(ctx.f(qx)).append(' ').append(ctx.f(qy))
+                            }
+                            6 -> {
+                                val (c1x, c1y) = tx(seg[0], seg[1])
+                                val (c2x, c2y) = tx(seg[2], seg[3])
+                                val (cx2, cy2) = tx(seg[4], seg[5])
+                                sb.append(" C ").append(ctx.f(c1x)).append(' ').append(ctx.f(c1y))
+                                  .append(' ').append(ctx.f(c2x)).append(' ').append(ctx.f(c2y))
+                                  .append(' ').append(ctx.f(cx2)).append(' ').append(ctx.f(cy2))
+                            }
                         }
                     }
+                    if (ctx.customPathClosed && segs.size >= 3) sb.append(" Z")
                 }
+
+                val pathD = sb.toString()
+                if (pathD.isBlank()) return emptyList()
 
                 val pathElem = if (ctx.customPathClosed) {
-                    sb.append(" Z")
-                    ctx.cutPath(id, sb.toString())
+                    ctx.cutPath(id, pathD)
                 } else {
-                    (ctx.cutPathOnline ?: ctx.cutPath).invoke(id, sb.toString())
+                    (ctx.cutPathOnline ?: ctx.cutPath).invoke(id, pathD)
                 }
 
-                // Clip to the tight envelope of the deformed shape. The plain [cx−w/2, yBase, w, h]
-                // box is expanded to cover parallelogram lean (±|hs| horizontally) and trapezoid
-                // height growth (up to h×(1+|trap|/2) on the taller side).
-                val absHs   = kotlin.math.abs(hs)
-                val clipX   = cx - w / 2.0 - absHs
-                val clipW   = w + 2.0 * absHs
-                val clipH   = h * (1.0 + kotlin.math.abs(ctx.trap) / 2.0)
-                val clipId  = "iclip-$id"
-                val clipDef = """<clipPath id="$clipId"><rect x="${ctx.f(clipX)}" y="${ctx.f(yBase)}" width="${ctx.f(clipW)}" height="${ctx.f(clipH)}"/></clipPath>"""
-                val clipped = pathElem.replace("<g ", """<g clip-path="url(#$clipId)" """)
-                return listOf(clipDef, clipped)
+                return listOf(pathElem)
             }
 
             return if (ctx.isDouble) {

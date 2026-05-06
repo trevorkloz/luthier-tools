@@ -174,7 +174,7 @@ class SvgGeneratorService {
                         effectiveHeight   = effectiveHeight,
                         trap              = request.inlayTrapezoid,
                         parallelogram     = request.inlayParallelogram,
-                        edgePad           = effectiveSize / 2.0 + INLAY_EDGE_PAD_OFFSET,
+                        edgePad           = effectiveSize / 2.0 + request.inlayEdgeMargin,
                         effectiveInlayDoubleOffset      = effectiveInlayDoubleOffset,
                         isDouble          = request.doubleInlays && inlayFret in doubleFrets,
                         position          = request.inlayPosition,
@@ -531,8 +531,7 @@ class SvgGeneratorService {
                 }
             }
 
-            // Distance from yTop/yBottom to the shape's bbox edge (rectangle is flush; circle/diamond inset)
-            val shapeEdgeInset = if (request.inlayShape == InlayShape.RECTANGLE) 0.0 else INLAY_EDGE_PAD_OFFSET
+            val shapeEdgeInset = request.inlayEdgeMargin
 
             for ((idx, entry) in groupList.withIndex()) {
                 val (fs, _) = entry
@@ -557,7 +556,7 @@ class SvgGeneratorService {
                     effectiveHeight            = fs.effHeight,
                     trap                       = request.inlayTrapezoid,
                     parallelogram              = request.inlayParallelogram,
-                    edgePad                    = fs.effSize / 2.0 + INLAY_EDGE_PAD_OFFSET,
+                    edgePad                    = fs.effSize / 2.0 + request.inlayEdgeMargin,
                     effectiveInlayDoubleOffset = fs.effOffset,
                     isDouble                   = fs.isDouble,
                     position                   = request.inlayPosition,

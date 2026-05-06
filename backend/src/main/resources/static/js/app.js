@@ -32,6 +32,7 @@ const PRESETS = [
 let lastResponse = null;
 let debounceTimer = null;
 let prevUnit = 'mm';
+let previewDarkMode = false;
 
 let currentInlayPresetId = 'circle';
 let inlayPresets         = [];
@@ -71,11 +72,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     onCloseEnd: saveState,
   });
   M.FormSelect.init(document.querySelectorAll('select'));
-  M.Dropdown.init(document.querySelectorAll('.dropdown-trigger'), {
-    constrainWidth: false,
-    coverTrigger: false,
-    alignment: 'left',
-  });
 
   restoreState();
   M.updateTextFields();
@@ -89,6 +85,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   bindDimSlider('inlaySize',          'inlaySizeVal');
   bindDimSlider('inlayHeight',        'inlayHeightVal');
   bindDimSlider('inlayDoubleOffset',  'inlayDoubleOffsetVal');
+  bindDimSlider('inlayEdgeMargin',    'inlayEdgeMarginVal');
   bindSlider('inlayShrinkWidth1224',  'inlayShrinkWidth1224Val');
   bindSlider('inlayShrinkHeight1224', 'inlayShrinkHeight1224Val');
   bindSlider('inlayShrinkWidth',    'inlayShrinkWidthVal');
@@ -130,8 +127,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateShapeFields();
     scheduleCalculate();
   });
-  document.getElementById('inlayPosition').addEventListener('change', scheduleCalculate);
+  document.getElementById('inlayPosition').addEventListener('change', () => { updateInlayEdgeMarginVisibility(); scheduleCalculate(); });
   document.getElementById('inlayDoubleOrientation').addEventListener('change', scheduleCalculate);
+  updateInlayEdgeMarginVisibility();
 
   const cpCanvas = document.getElementById('customPathCanvas');
   cpCanvas.addEventListener('mousedown',   customPathMouseDown);
@@ -264,939 +262,10 @@ function bindSlider(id, valId) {
   el.addEventListener('input', () => { valEl.textContent = parseFloat(el.value).toFixed(2); scheduleCalculate(); });
 }
 
-// ── Custom inlay polygon editor ──────────────────────────────
-// customPathPoints holds segments (not just points). Each entry is a flat array:
-//   length 2 -> [x, y]               (first entry: start point, otherwise: line to)
-//   length 4 -> [cx, cy, x, y]       (quadratic Bezier: control + end)
-// All coords are normalized to [0, 1]. Clicking near the first vertex (≥3 segments)
-// closes the path. In Arc mode, two clicks define a quadratic segment: click 1 sets
-// the control handle (shown in orange), click 2 sets the end point.
-//
-// Mouse interaction:
-//   - Click empty area: add a line vertex (Line mode) or a Q segment whose control
-//     starts on the midpoint (Arc mode) — drag the control square to shape it later
-//   - Click near first vertex (≥3 segs): close gesture
-//   - Click on an existing edge: insert vertex (or convert L→Q in Arc mode)
-//   - Drag a vertex / control point: move it
-//   - Shift-drag anywhere: translate the whole polygon
-//   - Right-click or Shift-click a vertex: delete that segment
-//   - Right-click or Shift-click a control point of a Q segment: drop it (Q → L)
-let customPathPoints = [];
-let customPathArcMode = false;
-let customPathClosed = true;   // true → render filled closed area; false → open lines only
-let customPathDrag = null;     // { mode, target, downXn, downYn, moved, ... }
-let customPathCmdHeld = false; // true while Cmd (Mac) or Ctrl (Win) is pressed
-const CUSTOM_PATH_VB         = 100;
-const CUSTOM_PATH_MARGIN     = 30;                                      // extra VB units outside the window on each side
-const CUSTOM_PATH_CANVAS_VB  = CUSTOM_PATH_VB + 2 * CUSTOM_PATH_MARGIN; // 160 — total canvas VB width/height
-const CUSTOM_PATH_SNAP_DIST = 6;
-// Point-hit is intentionally bigger than segment-hit so clicks just outside a vertex's
-// visible circle still latch onto the vertex (drag intent) rather than landing on the
-// segment line that touches it and inserting a stray vertex.
-const CUSTOM_PATH_POINT_HIT_RADIUS    = 5;
-const CUSTOM_PATH_SEGMENT_HIT_RADIUS  = 3;
-// Wider "missed drag" radius used at mouseup time to suppress click-add / segment-insert
-// when the click is close to any point. Helpful for Q segments whose curve passes very
-// near an endpoint — without this, clicks within ~5–8 vb of an endpoint land on the
-// curve and silently insert a (de Casteljau) vertex that doesn't change the shape.
-const CUSTOM_PATH_NEAR_POINT_RADIUS   = 8;
-const CUSTOM_PATH_HIT_RADIUS = CUSTOM_PATH_POINT_HIT_RADIUS;     // back-compat alias
-const CUSTOM_PATH_DRAG_THRESHOLD  = 1.5; // viewBox units of movement before a drag actually starts
-const CUSTOM_PATH_CLICK_THRESHOLD = 0.8; // movement above this turns a release into a no-op (was a missed drag, not a click)
+// ── Custom inlay editor — see custom-path-editor.js ─────────────────────────
+// State (customPathPoints, customPathClosed, _cpActiveSubpath) and all functions
+// are declared in custom-path-editor.js, loaded before this file.
 
-function customPathSegEnd(seg) {
-  return seg.length === 2 ? [seg[0], seg[1]]
-       : seg.length === 4 ? [seg[2], seg[3]]
-       : seg.length === 6 ? [seg[4], seg[5]]
-       : [0, 0];
-}
-
-function customPathEventPos(evt) {
-  const svg  = document.getElementById('customPathCanvas');
-  const rect = svg.getBoundingClientRect();
-  // Map mouse into the extended viewBox space (origin at -MARGIN, total = CANVAS_VB)
-  const xv = ((evt.clientX - rect.left) / rect.width)  * CUSTOM_PATH_CANVAS_VB - CUSTOM_PATH_MARGIN;
-  const yv = ((evt.clientY - rect.top)  / rect.height) * CUSTOM_PATH_CANVAS_VB - CUSTOM_PATH_MARGIN;
-  const ext = (CUSTOM_PATH_MARGIN / CUSTOM_PATH_VB) + 0.05; // ~0.35
-  return {
-    xn: Math.max(-ext, Math.min(1 + ext, xv / CUSTOM_PATH_VB)),
-    yn: Math.max(-ext, Math.min(1 + ext, yv / CUSTOM_PATH_VB)),
-  };
-}
-
-// Build the list of editable points (vertices + control points) for hit testing.
-// Each target carries the segment index and the byte-offset where its [x, y] lives.
-function customPathHitTargets() {
-  const out = [];
-  customPathPoints.forEach((seg, i) => {
-    if (seg.length === 2) {
-      out.push({ kind: 'vertex', segIndex: i, coordOffset: 0, x: seg[0], y: seg[1] });
-    } else if (seg.length === 4) {
-      out.push({ kind: 'cp',     segIndex: i, coordOffset: 0, x: seg[0], y: seg[1] });
-      out.push({ kind: 'vertex', segIndex: i, coordOffset: 2, x: seg[2], y: seg[3] });
-    } else if (seg.length === 6) {
-      out.push({ kind: 'cp',     segIndex: i, coordOffset: 0, x: seg[0], y: seg[1] });
-      out.push({ kind: 'cp',     segIndex: i, coordOffset: 2, x: seg[2], y: seg[3] });
-      out.push({ kind: 'vertex', segIndex: i, coordOffset: 4, x: seg[4], y: seg[5] });
-    }
-  });
-  return out;
-}
-
-// Distance from point (px, py) to line segment (x0, y0)–(x1, y1). Returns { dist, t }.
-function customPathDistToLine(px, py, x0, y0, x1, y1) {
-  const dx = x1 - x0, dy = y1 - y0;
-  const len2 = dx * dx + dy * dy;
-  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - x0) * dx + (py - y0) * dy) / len2));
-  const cx = x0 + t * dx, cy = y0 + t * dy;
-  return { dist: Math.sqrt((px - cx) ** 2 + (py - cy) ** 2), t };
-}
-
-// Approximate distance to a quadratic Bezier by sampling 24 segments along it.
-function customPathDistToQuad(px, py, x0, y0, cx, cy, x1, y1) {
-  let best = { dist: Infinity, t: 0 };
-  for (let i = 0; i <= 24; i++) {
-    const t = i / 24;
-    const u = 1 - t;
-    const x = u * u * x0 + 2 * u * t * cx + t * t * x1;
-    const y = u * u * y0 + 2 * u * t * cy + t * t * y1;
-    const d = Math.sqrt((px - x) ** 2 + (py - y) ** 2);
-    if (d < best.dist) best = { dist: d, t };
-  }
-  return best;
-}
-
-// Hit-test against segment edges (lines + curves). Returns { segIndex, t, prev } or null.
-function customPathSegmentHit(xn, yn) {
-  let best = null;
-  let bestDist = CUSTOM_PATH_SEGMENT_HIT_RADIUS;
-  for (let i = 1; i < customPathPoints.length; i++) {
-    const prev = customPathSegEnd(customPathPoints[i - 1]);
-    const seg  = customPathPoints[i];
-    let r;
-    if (seg.length === 2) {
-      r = customPathDistToLine(xn, yn, prev[0], prev[1], seg[0], seg[1]);
-    } else if (seg.length === 4) {
-      r = customPathDistToQuad(xn, yn, prev[0], prev[1], seg[0], seg[1], seg[2], seg[3]);
-    } else continue;
-    const dVb = r.dist * CUSTOM_PATH_VB;
-    if (dVb < bestDist) {
-      bestDist = dVb;
-      best = { segIndex: i, t: r.t, prev };
-    }
-  }
-  // Also test the implicit closing edge (the SVG Z line from the last endpoint back
-  // to the start). It isn't a segment in the data model, so we flag the hit with
-  // isClosing and handle it specially in the click path.
-  if (customPathPoints.length >= 3) {
-    const last  = customPathSegEnd(customPathPoints[customPathPoints.length - 1]);
-    const start = customPathPoints[0];
-    const r = customPathDistToLine(xn, yn, last[0], last[1], start[0], start[1]);
-    const dVb = r.dist * CUSTOM_PATH_VB;
-    if (dVb < bestDist) {
-      bestDist = dVb;
-      best = { segIndex: -1, t: r.t, prev: last, isClosing: true };
-    }
-  }
-  return best;
-}
-
-// Insert a new vertex on the segment that was hit. Splits L→L+L or Q→Q+Q via de Casteljau.
-function customPathInsertOnSegment(hit, xn, yn) {
-  const i    = hit.segIndex;
-  const prev = hit.prev;
-  const seg  = customPathPoints[i];
-  const t    = hit.t;
-
-  if (seg.length === 2) {
-    customPathPoints.splice(i, 0, [xn, yn]);
-  } else if (seg.length === 4) {
-    const p0 = prev;
-    const p1 = [seg[0], seg[1]];
-    const p2 = [seg[2], seg[3]];
-    const u  = 1 - t;
-    const q0 = [u * p0[0] + t * p1[0], u * p0[1] + t * p1[1]];
-    const q1 = [u * p1[0] + t * p2[0], u * p1[1] + t * p2[1]];
-    const r  = [u * q0[0] + t * q1[0], u * q0[1] + t * q1[1]];
-    customPathPoints.splice(i, 1,
-      [q0[0], q0[1], r[0], r[1]],
-      [q1[0], q1[1], p2[0], p2[1]]
-    );
-  }
-}
-
-// Vertices win ties over control points (so a vertex on top of a cp is grabbed first).
-function customPathHitTest(xn, yn) {
-  let best = null;
-  let bestDist = CUSTOM_PATH_POINT_HIT_RADIUS;
-  for (const t of customPathHitTargets()) {
-    const dx = (t.x - xn) * CUSTOM_PATH_VB;
-    const dy = (t.y - yn) * CUSTOM_PATH_VB;
-    const d  = Math.sqrt(dx * dx + dy * dy);
-    if (d > bestDist) continue;
-    if (best === null || (t.kind === 'vertex' && best.kind !== 'vertex') || d < bestDist - 0.5) {
-      best = t;
-      bestDist = d;
-    }
-  }
-  return best;
-}
-
-function customPathDeleteTarget(target) {
-  const i = target.segIndex;
-  if (target.kind === 'cp') {
-    const seg = customPathPoints[i];
-    if (seg.length === 4) {
-      customPathPoints[i] = [seg[2], seg[3]]; // Q → L
-    } else if (seg.length === 6) {
-      customPathPoints[i] = (target.coordOffset === 0)
-        ? [seg[2], seg[3], seg[4], seg[5]]    // C without c1 → Q with c2
-        : [seg[0], seg[1], seg[4], seg[5]];   // C without c2 → Q with c1
-    }
-  } else {
-    if (i === 0) {
-      // Promote next segment's endpoint to the new start
-      if (customPathPoints.length === 1) {
-        customPathPoints = [];
-      } else {
-        const next = customPathPoints[1];
-        const newStart = customPathSegEnd(next);
-        customPathPoints[0] = [newStart[0], newStart[1]];
-        customPathPoints.splice(1, 1);
-      }
-    } else {
-      customPathPoints.splice(i, 1);
-    }
-  }
-}
-
-function customPathClick(evt) {
-  const { xn: x, yn: y } = customPathEventPos(evt);
-
-  if (customPathPoints.length === 0) {
-    customPathPoints.push([x, y]);
-    customPathRedraw();
-    scheduleCalculate();
-    return;
-  }
-
-  // Click on existing edge: in Line mode (or on a Q segment) split it and insert a vertex.
-  // In Arc mode on an L segment, promote it to a Q with the click as the control point.
-  // Cmd/Ctrl+click toggles L↔Q regardless of mode (no vertex inserted).
-  // Checked BEFORE the close-to-start gesture so the first edge (which starts at the
-  // start vertex) doesn't get swallowed by the close-snap radius.
-  const segHit = customPathSegmentHit(x, y);
-  if (segHit) {
-    const cmd = evt.metaKey || evt.ctrlKey;
-    if (cmd) {
-      if (segHit.isClosing) {
-        // Closing edge is always a straight Z — Cmd+click adds a Q arc on it.
-        customPathPoints.push([x, y, customPathPoints[0][0], customPathPoints[0][1]]);
-      } else {
-        const seg = customPathPoints[segHit.segIndex];
-        if (seg.length === 2) {
-          // L → Q: click position becomes the control handle.
-          customPathPoints[segHit.segIndex] = [x, y, seg[0], seg[1]];
-        } else if (seg.length === 4) {
-          // Q → L: drop the control point.
-          customPathPoints[segHit.segIndex] = [seg[2], seg[3]];
-        }
-        // Cubic (length 6): no-op — Cmd+click on a cubic is ignored.
-      }
-      customPathRedraw();
-      scheduleCalculate();
-      return;
-    }
-    if (segHit.isClosing) {
-      // Click on the implicit closing edge (last endpoint → start).
-      // Line mode: insert a vertex — the closing line is split in two.
-      // Arc mode: turn the closing edge into a Q whose endpoint is the start, with
-      //   the click as its control handle. Adds a bezier handle on the line — no new
-      //   vertex; the user can drag the new control square afterwards to shape it.
-      if (customPathArcMode) {
-        customPathPoints.push([x, y, customPathPoints[0][0], customPathPoints[0][1]]);
-      } else {
-        customPathPoints.push([x, y]);
-      }
-    } else {
-      const seg = customPathPoints[segHit.segIndex];
-      if (customPathArcMode && seg.length === 2) {
-        // Convert this L into a Q with the click as its control handle. No vertex
-        // is inserted — endpoints stay where they were.
-        customPathPoints[segHit.segIndex] = [x, y, seg[0], seg[1]];
-      } else {
-        customPathInsertOnSegment(segHit, x, y);
-      }
-    }
-    customPathRedraw();
-    scheduleCalculate();
-    return;
-  }
-
-  if (customPathArcMode) {
-    // Place the control point on the midpoint of the line from the previous endpoint
-    // to the click — the curve initially looks like a straight line, and the user can
-    // drag the new control square afterwards to shape it.
-    const prev = customPathSegEnd(customPathPoints[customPathPoints.length - 1]);
-    const cpx  = (prev[0] + x) / 2;
-    const cpy  = (prev[1] + y) / 2;
-    customPathPoints.push([cpx, cpy, x, y]);
-  } else {
-    customPathPoints.push([x, y]);
-  }
-  customPathRedraw();
-  scheduleCalculate();
-}
-
-function customPathMouseDown(evt) {
-  // Right-click → delete on hit
-  if (evt.button === 2) {
-    evt.preventDefault();
-    const { xn, yn } = customPathEventPos(evt);
-    const hit = customPathHitTest(xn, yn);
-    if (hit) {
-      customPathDeleteTarget(hit);
-      customPathRedraw();
-      scheduleCalculate();
-    }
-    return;
-  }
-  if (evt.button !== 0) return;
-
-  const { xn, yn } = customPathEventPos(evt);
-
-  // Shift-drag → translate the entire polygon (snapshot positions + bbox for clean delta math)
-  if (evt.shiftKey) {
-    let minX = 1, minY = 1, maxX = 0, maxY = 0;
-    for (const seg of customPathPoints) {
-      for (let k = 0; k < seg.length; k += 2) {
-        if (seg[k]     < minX) minX = seg[k];
-        if (seg[k]     > maxX) maxX = seg[k];
-        if (seg[k + 1] < minY) minY = seg[k + 1];
-        if (seg[k + 1] > maxY) maxY = seg[k + 1];
-      }
-    }
-    customPathDrag = {
-      mode:    'translate',
-      downXn:  xn,
-      downYn:  yn,
-      moved:   false,
-      original: customPathPoints.map(seg => seg.slice()),
-      origBBox: { minX, minY, maxX, maxY },
-    };
-    return;
-  }
-
-  customPathDrag = {
-    mode:   'point',
-    target: customPathHitTest(xn, yn),
-    downXn: xn,
-    downYn: yn,
-    moved:  false,
-  };
-}
-
-let _customPathLastXn = -1, _customPathLastYn = -1;
-function customPathUpdateCursor() {
-  if (_customPathLastXn < 0 || customPathDrag) return;
-  const svg = document.getElementById('customPathCanvas');
-  if (!svg) return;
-  const ptHit = customPathHitTest(_customPathLastXn, _customPathLastYn);
-  if (ptHit) { svg.style.cursor = 'grab'; return; }
-  if (customPathPoints.length >= 1 && customPathSegmentHit(_customPathLastXn, _customPathLastYn)) {
-    svg.style.cursor = customPathCmdHeld ? 'pointer' : 'cell';
-  } else {
-    svg.style.cursor = 'crosshair';
-  }
-}
-
-function customPathMouseMove(evt) {
-  const svg = document.getElementById('customPathCanvas');
-  const { xn, yn } = customPathEventPos(evt);
-  _customPathLastXn = xn;
-  _customPathLastYn = yn;
-
-  if (!customPathDrag) {
-    // Hover cursor: Shift-hover signals "translate" if there's a path to move.
-    if (evt.shiftKey && customPathPoints.length > 0) {
-      svg.style.cursor = 'move';
-    } else {
-      const ptHit = customPathHitTest(xn, yn);
-      if (ptHit) {
-        svg.style.cursor = 'grab';
-      } else if (customPathPoints.length >= 1 && customPathSegmentHit(xn, yn)) {
-        // Cmd/Ctrl held over a segment → pointer signals "toggle L↔Q" instead of insert
-        svg.style.cursor = customPathCmdHeld ? 'pointer' : 'cell';
-      } else {
-        svg.style.cursor = 'crosshair';
-      }
-    }
-    return;
-  }
-
-  const dxN  = xn - customPathDrag.downXn;
-  const dyN  = yn - customPathDrag.downYn;
-  const dist = Math.sqrt(dxN * dxN + dyN * dyN) * CUSTOM_PATH_VB;
-  if (dist > (customPathDrag.maxDist || 0)) customPathDrag.maxDist = dist;
-  if (!customPathDrag.moved && dist > CUSTOM_PATH_DRAG_THRESHOLD) {
-    customPathDrag.moved = true;
-  }
-  if (!customPathDrag.moved) return;
-
-  if (customPathDrag.mode === 'translate') {
-    svg.style.cursor = 'grabbing';
-    const orig = customPathDrag.original;
-    // Constrain the translation delta so the polygon's bounding box stays within
-    // [0, 1]. Clamping each point independently (the previous behavior) deformed
-    // the shape when individual points hit the canvas edge.
-    const bb = customPathDrag.origBBox;
-    const cdx = Math.max(-bb.minX, Math.min(1 - bb.maxX, dxN));
-    const cdy = Math.max(-bb.minY, Math.min(1 - bb.maxY, dyN));
-    for (let i = 0; i < orig.length; i++) {
-      const o = orig[i];
-      const next = o.slice();
-      for (let k = 0; k < o.length; k += 2) {
-        next[k]     = o[k]     + cdx;
-        next[k + 1] = o[k + 1] + cdy;
-      }
-      customPathPoints[i] = next;
-    }
-    customPathRedraw();
-    return;
-  }
-
-  // mode === 'point'
-  if (customPathDrag.target) {
-    svg.style.cursor = 'grabbing';
-    const t = customPathDrag.target;
-    const oldX = customPathPoints[t.segIndex][t.coordOffset];
-    const oldY = customPathPoints[t.segIndex][t.coordOffset + 1];
-    customPathPoints[t.segIndex][t.coordOffset]     = xn;
-    customPathPoints[t.segIndex][t.coordOffset + 1] = yn;
-    // Closed-via-arc paths have a final Q whose endpoint is the start coords. When the
-    // user drags the start vertex, sync any matching segment endpoints so the closing
-    // edge follows along instead of leaving a stranded white dot at the old start spot.
-    if (t.segIndex === 0 && t.coordOffset === 0) {
-      const eps = 0.0005;
-      for (let i = 1; i < customPathPoints.length; i++) {
-        const seg = customPathPoints[i];
-        const endOff = seg.length - 2;
-        if (endOff >= 0
-            && Math.abs(seg[endOff]     - oldX) < eps
-            && Math.abs(seg[endOff + 1] - oldY) < eps) {
-          seg[endOff]     = xn;
-          seg[endOff + 1] = yn;
-        }
-      }
-    }
-    customPathRedraw();
-  }
-}
-
-function customPathMouseUp(evt) {
-  if (!customPathDrag) return;
-  const drag = customPathDrag;
-  customPathDrag = null;
-
-  if (drag.moved) {
-    scheduleCalculate();
-    return;
-  }
-
-  // Shift-press without a drag → treat as a no-op (avoids a foot-gun where releasing
-  // without moving would, say, delete a point you were about to translate).
-  if (drag.mode === 'translate') return;
-
-  // No drag — treat as click
-  if (drag.target) {
-    // Tap on existing point: only the start vertex has the close gesture
-    if (drag.target.kind === 'vertex' && drag.target.segIndex === 0
-        && customPathPoints.length >= 3) {
-      customPathRedraw();
-      scheduleCalculate();
-    }
-    return;
-  }
-
-  // Suppress accidental adds: if the cursor wobbled more than the click threshold,
-  // assume the user was trying to drag a nearby point but missed the hit radius.
-  if ((drag.maxDist || 0) > CUSTOM_PATH_CLICK_THRESHOLD) return;
-
-  // Wider drag-intent suppression: if the click is close to any vertex/cp (beyond
-  // the strict point-hit radius), treat it as a missed drag instead of a click.
-  // This stops curves that pass near an endpoint from absorbing intended grabs.
-  // The close-to-start gesture (≥3 segments) takes priority before this filter.
-  const { xn, yn } = customPathEventPos(evt);
-  if (customPathPoints.length >= 3) {
-    const [sx, sy] = customPathPoints[0];
-    const dxs = (sx - xn) * CUSTOM_PATH_VB;
-    const dys = (sy - yn) * CUSTOM_PATH_VB;
-    if (Math.sqrt(dxs * dxs + dys * dys) <= CUSTOM_PATH_SNAP_DIST) {
-      customPathRedraw();
-      scheduleCalculate();
-      return;
-    }
-  }
-  const nearR2 = CUSTOM_PATH_NEAR_POINT_RADIUS * CUSTOM_PATH_NEAR_POINT_RADIUS;
-  for (const t of customPathHitTargets()) {
-    const dx = (t.x - xn) * CUSTOM_PATH_VB;
-    const dy = (t.y - yn) * CUSTOM_PATH_VB;
-    if (dx * dx + dy * dy < nearR2) return;
-  }
-
-  customPathClick(evt);
-}
-
-function customPathContextMenu(evt) {
-  evt.preventDefault();
-}
-
-function customPathRedraw() {
-  const svg = document.getElementById('customPathCanvas');
-  if (!svg) return;
-  const modeBtn = document.getElementById('customPathModeBtn');
-  if (modeBtn) {
-    const icon = customPathArcMode ? 'gesture' : 'horizontal_rule';
-    modeBtn.innerHTML = `<i class="material-icons" style="font-size:14px;line-height:14px;vertical-align:middle">${icon}</i>`;
-    modeBtn.title = customPathArcMode ? 'Arc segments' : 'Line segments';
-    modeBtn.style.background  = customPathArcMode ? '#fff3e0' : '#e8f5e9';
-    modeBtn.style.color       = customPathArcMode ? '#e65100' : '#2e7d32';
-    modeBtn.style.borderColor = customPathArcMode ? '#ffe0b2' : '#c8e6c9';
-  }
-  const closedBtn = document.getElementById('customPathClosedBtn');
-  if (closedBtn) {
-    const icon = customPathClosed ? 'category' : 'polyline';
-    closedBtn.innerHTML = `<i class="material-icons" style="font-size:14px;line-height:14px;vertical-align:middle">${icon}</i>`;
-    closedBtn.title = customPathClosed ? 'Closed (filled area)' : 'Open (lines only)';
-    closedBtn.style.background  = customPathClosed ? '#e3f2fd' : '#fff';
-    closedBtn.style.color       = customPathClosed ? '#0277bd' : '#455a64';
-    closedBtn.style.borderColor = customPathClosed ? '#bbdefb' : '#cfd8dc';
-  }
-
-  // Background: gray outside area already set by CSS; white window rect + border
-  const M  = CUSTOM_PATH_MARGIN;
-  const VB = CUSTOM_PATH_VB;
-  const background = [
-    // white fill inside window
-    `<rect x="0" y="0" width="${VB}" height="${VB}" fill="white"/>`,
-    // grid lines (inside window only)
-    ...[25, 50, 75].flatMap(g => [
-      `<line x1="${g}" y1="0" x2="${g}" y2="${VB}" stroke="#eceff1" stroke-width="0.4"/>`,
-      `<line x1="0" y1="${g}" x2="${VB}" y2="${g}" stroke="#eceff1" stroke-width="0.4"/>`,
-    ]),
-    // dashed window border
-    `<rect x="0" y="0" width="${VB}" height="${VB}" fill="none" stroke="#90caf9" stroke-width="0.6" stroke-dasharray="2,2"/>`,
-    // clip path used by the shape preview
-    `<clipPath id="cpwin"><rect x="0" y="0" width="${VB}" height="${VB}"/></clipPath>`,
-  ];
-
-  let d = '';
-  if (customPathPoints.length >= 1) {
-    const [sx, sy] = customPathPoints[0];
-    d = `M ${sx * CUSTOM_PATH_VB} ${sy * CUSTOM_PATH_VB}`;
-    for (let i = 1; i < customPathPoints.length; i++) {
-      const seg = customPathPoints[i];
-      if (seg.length === 2) {
-        d += ` L ${seg[0] * CUSTOM_PATH_VB} ${seg[1] * CUSTOM_PATH_VB}`;
-      } else if (seg.length === 4) {
-        d += ` Q ${seg[0] * CUSTOM_PATH_VB} ${seg[1] * CUSTOM_PATH_VB}`
-           + ` ${seg[2] * CUSTOM_PATH_VB} ${seg[3] * CUSTOM_PATH_VB}`;
-      } else if (seg.length === 6) {
-        d += ` C ${seg[0] * CUSTOM_PATH_VB} ${seg[1] * CUSTOM_PATH_VB}`
-           + ` ${seg[2] * CUSTOM_PATH_VB} ${seg[3] * CUSTOM_PATH_VB}`
-           + ` ${seg[4] * CUSTOM_PATH_VB} ${seg[5] * CUSTOM_PATH_VB}`;
-      }
-    }
-  }
-
-  let shape = '';
-  if (customPathClosed && customPathPoints.length >= 3) {
-    shape = `<path d="${d} Z" fill="#bbdefb" fill-opacity="0.5" stroke="#0277bd" stroke-width="0.6" clip-path="url(#cpwin)"/>`;
-  } else if (customPathPoints.length >= 1) {
-    shape = `<path d="${d}" fill="none" stroke="#0277bd" stroke-width="0.6" clip-path="url(#cpwin)"/>`;
-  }
-
-  // Vertices (segment endpoints). Non-start vertices first, start last so it always
-  // wins the z-order — needed because a closed-via-arc path may have a Q whose endpoint
-  // sits exactly on the start coords, and a white circle drawn after a blue one would
-  // otherwise hide the start.
-  let verts = '';
-  for (let i = 1; i < customPathPoints.length; i++) {
-    const [vx, vy] = customPathSegEnd(customPathPoints[i]);
-    verts += `<circle cx="${vx * CUSTOM_PATH_VB}" cy="${vy * CUSTOM_PATH_VB}" r="1.6" fill="#fff" stroke="#0277bd" stroke-width="0.6"/>`;
-  }
-  if (customPathPoints.length > 0) {
-    const [sx, sy] = customPathPoints[0];
-    verts += `<circle cx="${sx * CUSTOM_PATH_VB}" cy="${sy * CUSTOM_PATH_VB}" r="1.6" fill="#0277bd" stroke="#0277bd" stroke-width="0.6"/>`;
-  }
-
-  // Control points of committed Q/C segments — small grey marks + handle line
-  const cps = customPathPoints.map((seg, i) => {
-    if (seg.length !== 4 || i === 0) return '';
-    const prevEnd = customPathSegEnd(customPathPoints[i - 1]);
-    const cx = seg[0] * CUSTOM_PATH_VB;
-    const cy = seg[1] * CUSTOM_PATH_VB;
-    const ex = seg[2] * CUSTOM_PATH_VB;
-    const ey = seg[3] * CUSTOM_PATH_VB;
-    return `<line x1="${prevEnd[0] * CUSTOM_PATH_VB}" y1="${prevEnd[1] * CUSTOM_PATH_VB}" x2="${cx}" y2="${cy}" stroke="#cfd8dc" stroke-width="0.3" stroke-dasharray="1,1"/>`
-         + `<line x1="${ex}" y1="${ey}" x2="${cx}" y2="${cy}" stroke="#cfd8dc" stroke-width="0.3" stroke-dasharray="1,1"/>`
-         + `<rect x="${cx - 1.2}" y="${cy - 1.2}" width="2.4" height="2.4" fill="#fff" stroke="#9e9e9e" stroke-width="0.5"/>`;
-  }).join('');
-
-  svg.innerHTML = background.join('') + shape + cps + verts;
-}
-
-function customPathToggleMode() {
-  customPathArcMode = !customPathArcMode;
-  customPathRedraw();
-}
-
-function customPathToggleClosed() {
-  customPathClosed = !customPathClosed;
-  customPathRedraw();
-  scheduleCalculate();
-}
-
-function customPathClear() {
-  customPathPoints = [];
-  customPathRedraw();
-  scheduleCalculate();
-}
-
-// Rotate the entire polygon around its bounding-box centre.
-// Default click = +15° (CW); Shift-click via the wrapping handler passes -15°.
-function customPathRotate(degrees) {
-  if (customPathPoints.length === 0) return;
-  let minX = 1, minY = 1, maxX = 0, maxY = 0;
-  for (const seg of customPathPoints) {
-    for (let k = 0; k < seg.length; k += 2) {
-      if (seg[k]     < minX) minX = seg[k];
-      if (seg[k]     > maxX) maxX = seg[k];
-      if (seg[k + 1] < minY) minY = seg[k + 1];
-      if (seg[k + 1] > maxY) maxY = seg[k + 1];
-    }
-  }
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
-  const rad = degrees * Math.PI / 180;
-  const cs  = Math.cos(rad);
-  const sn  = Math.sin(rad);
-
-  const rotated = customPathPoints.map(seg => {
-    const next = seg.slice();
-    for (let k = 0; k < seg.length; k += 2) {
-      const dx = seg[k]     - cx;
-      const dy = seg[k + 1] - cy;
-      next[k]     = cx + dx * cs - dy * sn;
-      next[k + 1] = cy + dx * sn + dy * cs;
-    }
-    return next;
-  });
-
-  // Keep the rotated bbox inside [0, 1] — translate to fit, scaling down only if the
-  // rotated shape literally exceeds the canvas (45° rotation of an axis-aligned bbox).
-  let nMinX = 1, nMinY = 1, nMaxX = 0, nMaxY = 0;
-  for (const seg of rotated) {
-    for (let k = 0; k < seg.length; k += 2) {
-      if (seg[k]     < nMinX) nMinX = seg[k];
-      if (seg[k]     > nMaxX) nMaxX = seg[k];
-      if (seg[k + 1] < nMinY) nMinY = seg[k + 1];
-      if (seg[k + 1] > nMaxY) nMaxY = seg[k + 1];
-    }
-  }
-  const w = nMaxX - nMinX;
-  const h = nMaxY - nMinY;
-  let scale = 1;
-  if (w > 1) scale = Math.min(scale, 1 / w);
-  if (h > 1) scale = Math.min(scale, 1 / h);
-  if (scale < 1) {
-    for (const seg of rotated) {
-      for (let k = 0; k < seg.length; k += 2) {
-        seg[k]     = cx + (seg[k]     - cx) * scale;
-        seg[k + 1] = cy + (seg[k + 1] - cy) * scale;
-      }
-    }
-    nMinX = (nMinX - cx) * scale + cx; nMaxX = (nMaxX - cx) * scale + cx;
-    nMinY = (nMinY - cy) * scale + cy; nMaxY = (nMaxY - cy) * scale + cy;
-  }
-  let tx = 0, ty = 0;
-  if (nMinX < 0) tx = -nMinX;       else if (nMaxX > 1) tx = 1 - nMaxX;
-  if (nMinY < 0) ty = -nMinY;       else if (nMaxY > 1) ty = 1 - nMaxY;
-  if (tx !== 0 || ty !== 0) {
-    for (const seg of rotated) {
-      for (let k = 0; k < seg.length; k += 2) {
-        seg[k]     += tx;
-        seg[k + 1] += ty;
-      }
-    }
-  }
-
-  customPathPoints = rotated;
-  customPathRedraw();
-  scheduleCalculate();
-}
-
-function customPathRotateClick(evt) {
-  customPathRotate(evt.shiftKey ? -15 : 15);
-}
-
-// ── SVG import ────────────────────────────────────────────────
-function customPathImportClick() {
-  document.getElementById('customPathFileInput').click();
-}
-
-function customPathImportSvg(svgText) {
-  const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
-  const parseError = doc.querySelector('parsererror');
-  if (parseError) { alert('Could not parse SVG file.'); return; }
-
-  // Try to find the first <path> element; fall back to first <polyline>/<polygon>/<rect>/<circle>
-  let el = doc.querySelector('path');
-  if (!el) {
-    const poly = doc.querySelector('polyline,polygon');
-    if (poly) {
-      const pts = (poly.getAttribute('points') || '').trim().split(/[\s,]+/).map(Number);
-      const d = pts.length >= 4
-        ? 'M ' + pts[0] + ' ' + pts[1] + pts.slice(2).reduce((s, v, i) => s + (i % 2 === 0 ? ' L ' + v : ' ' + v), '') +
-          (poly.tagName === 'polygon' ? ' Z' : '')
-        : null;
-      if (!d) { alert('No supported path found in SVG.'); return; }
-      el = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
-      el.setAttribute('d', d);
-    }
-  }
-  if (!el) { alert('No path element found in SVG.'); return; }
-
-  const m = svgCompositeTransform(el);
-  const segs = parseSvgD(el.getAttribute('d') || '');
-  if (segs.length < 2) { alert('Path too short to import.'); return; }
-
-  // Apply composite transform to all points
-  const tSegs = segs.map(seg => {
-    const out = [];
-    for (let i = 0; i < seg.length; i += 2) {
-      const [tx, ty] = svgApplyMatrix(m, seg[i], seg[i + 1]);
-      out.push(tx, ty);
-    }
-    return out;
-  });
-
-  const normalized = normalizeSvgPath(tSegs);
-  if (!normalized) { alert('Could not normalize path.'); return; }
-
-  customPathPoints = normalized;
-  customPathRedraw();
-  scheduleCalculate();
-}
-
-// Walk up DOM collecting transforms; return composite matrix (row-major [a,b,c,d,e,f])
-function svgCompositeTransform(el) {
-  const mats = [];
-  let node = el;
-  while (node && node.nodeType === 1) {
-    const t = node.getAttribute('transform');
-    if (t) mats.unshift(svgParseTransform(t));
-    node = node.parentNode;
-  }
-  return mats.reduce((acc, m) => svgMulMatrix(acc, m), [1, 0, 0, 1, 0, 0]);
-}
-
-function svgParseTransform(str) {
-  let m = [1, 0, 0, 1, 0, 0];
-  const re = /(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g;
-  let match;
-  while ((match = re.exec(str)) !== null) {
-    const fn = match[1];
-    const args = match[2].trim().split(/[\s,]+/).map(Number);
-    let tm;
-    if (fn === 'matrix')    { tm = args; }
-    else if (fn === 'translate') { tm = [1, 0, 0, 1, args[0] || 0, args[1] || 0]; }
-    else if (fn === 'scale')     { const sx = args[0] || 1, sy = args[1] !== undefined ? args[1] : sx; tm = [sx, 0, 0, sy, 0, 0]; }
-    else if (fn === 'rotate') {
-      const ang = (args[0] || 0) * Math.PI / 180, cx2 = args[1] || 0, cy2 = args[2] || 0;
-      const cos = Math.cos(ang), sin = Math.sin(ang);
-      tm = [cos, sin, -sin, cos, cx2 - cos * cx2 + sin * cy2, cy2 + sin * cx2 - cos * cy2];
-    }
-    else if (fn === 'skewX') { const t = Math.tan(args[0] * Math.PI / 180); tm = [1, 0, t, 1, 0, 0]; }
-    else if (fn === 'skewY') { const t = Math.tan(args[0] * Math.PI / 180); tm = [1, t, 0, 1, 0, 0]; }
-    else continue;
-    m = svgMulMatrix(m, tm);
-  }
-  return m;
-}
-
-function svgMulMatrix(a, b) {
-  return [
-    a[0]*b[0] + a[2]*b[1],
-    a[1]*b[0] + a[3]*b[1],
-    a[0]*b[2] + a[2]*b[3],
-    a[1]*b[2] + a[3]*b[3],
-    a[0]*b[4] + a[2]*b[5] + a[4],
-    a[1]*b[4] + a[3]*b[5] + a[5],
-  ];
-}
-
-function svgApplyMatrix(m, x, y) {
-  return [m[0]*x + m[2]*y + m[4], m[1]*x + m[3]*y + m[5]];
-}
-
-// Parse an SVG path d attribute; returns array of flat-coord segments:
-// [[x,y]] = start (M), [x,y] = line (L), [cpx,cpy,x,y] = Q, [c1x,c1y,c2x,c2y,x,y] = C
-// Only the first subpath is used (stops at second M or Z; Z itself = line to start)
-function parseSvgD(d) {
-  const tokens = d.trim().match(/[MmZzLlHhVvCcSsQqTtAa]|[-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?/g) || [];
-  const segs = [];
-  let i = 0;
-  let cx = 0, cy = 0, sx = 0, sy = 0;
-  let lastCmd = '', lastCp = null;
-  let started = false;
-
-  function num() { return parseFloat(tokens[i++]); }
-
-  while (i < tokens.length) {
-    const tok = tokens[i];
-    let cmd;
-    if (/[A-Za-z]/.test(tok)) { cmd = tok; i++; } else { cmd = lastCmd; }
-    lastCmd = cmd;
-
-    if (cmd === 'Z' || cmd === 'z') {
-      // Close subpath — add line back to start if not already there
-      if (started && (cx !== sx || cy !== sy)) segs.push([sx, sy]);
-      break; // first subpath done
-    }
-    if ((cmd === 'M' || cmd === 'm') && started) break; // second subpath
-
-    const rel = cmd === cmd.toLowerCase();
-
-    const addL = (x, y) => { cx = x; cy = y; segs.push([x, y]); lastCp = null; };
-    const addQ = (qcx, qcy, x, y) => { cx = x; cy = y; lastCp = [qcx, qcy]; segs.push([qcx, qcy, x, y]); };
-    const addC = (c1x, c1y, c2x, c2y, x, y) => { cx = x; cy = y; lastCp = [c2x, c2y]; segs.push([c1x, c1y, c2x, c2y, x, y]); };
-
-    if (cmd === 'M' || cmd === 'm') {
-      const x = num() + (rel && started ? cx : 0);
-      const y = num() + (rel && started ? cy : 0);
-      cx = x; cy = y; sx = x; sy = y;
-      if (!started) { segs.push([x, y]); started = true; }
-      else { addL(x, y); }
-      lastCmd = rel ? 'l' : 'L'; // implicit lineto after M
-    } else if (cmd === 'L' || cmd === 'l') {
-      addL(num() + (rel ? cx : 0), num() + (rel ? cy : 0));
-    } else if (cmd === 'H' || cmd === 'h') {
-      addL(num() + (rel ? cx : 0), cy);
-    } else if (cmd === 'V' || cmd === 'v') {
-      addL(cx, num() + (rel ? cy : 0));
-    } else if (cmd === 'Q' || cmd === 'q') {
-      const qcx = num() + (rel ? cx : 0), qcy = num() + (rel ? cy : 0);
-      const x   = num() + (rel ? cx : 0), y   = num() + (rel ? cy : 0);
-      addQ(qcx, qcy, x, y);
-    } else if (cmd === 'T' || cmd === 't') {
-      const qcx = lastCp ? 2*cx - lastCp[0] : cx;
-      const qcy = lastCp ? 2*cy - lastCp[1] : cy;
-      addQ(qcx, qcy, num() + (rel ? cx : 0), num() + (rel ? cy : 0));
-    } else if (cmd === 'C' || cmd === 'c') {
-      const c1x = num() + (rel ? cx : 0), c1y = num() + (rel ? cy : 0);
-      const c2x = num() + (rel ? cx : 0), c2y = num() + (rel ? cy : 0);
-      const x   = num() + (rel ? cx : 0), y   = num() + (rel ? cy : 0);
-      addC(c1x, c1y, c2x, c2y, x, y);
-    } else if (cmd === 'S' || cmd === 's') {
-      const c1x = lastCp ? 2*cx - lastCp[0] : cx;
-      const c1y = lastCp ? 2*cy - lastCp[1] : cy;
-      const c2x = num() + (rel ? cx : 0), c2y = num() + (rel ? cy : 0);
-      const x   = num() + (rel ? cx : 0), y   = num() + (rel ? cy : 0);
-      addC(c1x, c1y, c2x, c2y, x, y);
-    } else if (cmd === 'A' || cmd === 'a') {
-      const rx = Math.abs(num()), ry = Math.abs(num());
-      const xRot = num(), large = num() !== 0, sweep = num() !== 0;
-      const x = num() + (rel ? cx : 0), y = num() + (rel ? cy : 0);
-      const arcs = svgArcToCubics(cx, cy, rx, ry, xRot, large, sweep, x, y);
-      arcs.forEach(([c1x, c1y, c2x, c2y, ex, ey]) => addC(c1x, c1y, c2x, c2y, ex, ey));
-    } else {
-      i++; // unknown — skip token
-    }
-  }
-  return segs;
-}
-
-// Convert SVG arc to one or more cubic bezier segments (SVG spec Appendix B)
-function svgArcToCubics(x1, y1, rx, ry, xRotDeg, largeArc, sweep, x2, y2) {
-  if (x1 === x2 && y1 === y2) return [];
-  if (rx === 0 || ry === 0) return [[x1, y1, x2, y2, x2, y2]];
-
-  const phi  = xRotDeg * Math.PI / 180;
-  const cosp = Math.cos(phi), sinp = Math.sin(phi);
-
-  const mx = (x1 - x2) / 2, my = (y1 - y2) / 2;
-  const x1p =  cosp * mx + sinp * my;
-  const y1p = -sinp * mx + cosp * my;
-
-  let rx2 = rx * rx, ry2 = ry * ry;
-  const x1p2 = x1p * x1p, y1p2 = y1p * y1p;
-  const lam = x1p2 / rx2 + y1p2 / ry2;
-  if (lam > 1) { const s = Math.sqrt(lam); rx *= s; ry *= s; rx2 = rx*rx; ry2 = ry*ry; }
-
-  const num1 = rx2*ry2 - rx2*y1p2 - ry2*x1p2;
-  const den  = rx2*y1p2 + ry2*x1p2;
-  const sq   = Math.sqrt(Math.max(0, num1 / den));
-  const k    = (largeArc === sweep ? -1 : 1) * sq;
-  const cxp  = k * rx * y1p / ry;
-  const cyp  = -k * ry * x1p / rx;
-
-  const cx   = cosp*cxp - sinp*cyp + (x1+x2)/2;
-  const cy   = sinp*cxp + cosp*cyp + (y1+y2)/2;
-
-  const ux = (x1p - cxp) / rx, uy = (y1p - cyp) / ry;
-  const vx = (-x1p - cxp) / rx, vy = (-y1p - cyp) / ry;
-
-  const dot = ux*vx + uy*vy;
-  let da = Math.acos(Math.max(-1, Math.min(1, dot / Math.sqrt((ux*ux+uy*uy)*(vx*vx+vy*vy)))));
-  if (ux*vy - uy*vx < 0) da = -da;
-  if (sweep && da < 0) da += 2*Math.PI;
-  if (!sweep && da > 0) da -= 2*Math.PI;
-
-  const ang1 = Math.atan2(uy, ux);
-  const nSegs = Math.max(1, Math.ceil(Math.abs(da) / (Math.PI / 2)));
-  const dt = da / nSegs;
-
-  const cubics = [];
-  for (let s = 0; s < nSegs; s++) {
-    const a1 = ang1 + s * dt, a2 = ang1 + (s + 1) * dt;
-    const alpha = Math.sin(dt) * (Math.sqrt(4 + 3*Math.tan(dt/2)*Math.tan(dt/2)) - 1) / 3;
-    const ex1 = Math.cos(a1), ey1 = Math.sin(a1);
-    const ex2 = Math.cos(a2), ey2 = Math.sin(a2);
-    // P1, P2 on rotated ellipse; control points via tangent direction
-    const c1x = cx + cosp*(rx*(ex1 - alpha*ey1)) - sinp*(ry*(ey1 + alpha*ex1));
-    const c1y = cy + sinp*(rx*(ex1 - alpha*ey1)) + cosp*(ry*(ey1 + alpha*ex1));
-    const c2x = cx + cosp*(rx*(ex2 + alpha*ey2)) - sinp*(ry*(ey2 - alpha*ex2));
-    const c2y = cy + sinp*(rx*(ex2 + alpha*ey2)) + cosp*(ry*(ey2 - alpha*ex2));
-    const epx = cx + cosp*rx*ex2 - sinp*ry*ey2;
-    const epy = cy + sinp*rx*ex2 + cosp*ry*ey2;
-    cubics.push([c1x, c1y, c2x, c2y, epx, epy]);
-  }
-  return cubics;
-}
-
-// Scale/translate all segments to fit [0,1]² using bounding box of endpoints only
-function normalizeSvgPath(segs) {
-  if (!segs.length) return null;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const seg of segs) {
-    const x = seg[seg.length - 2], y = seg[seg.length - 1];
-    if (x < minX) minX = x; if (x > maxX) maxX = x;
-    if (y < minY) minY = y; if (y > maxY) maxY = y;
-  }
-  const w = maxX - minX, h = maxY - minY;
-  if (w < 1e-9 && h < 1e-9) return null;
-  const scale = 1.0 / Math.max(w, h);
-  const offX = (1.0 - w * scale) / 2 - minX * scale;
-  const offY = (1.0 - h * scale) / 2 - minY * scale;
-  return segs.map(seg => {
-    const out = [];
-    for (let i = 0; i < seg.length; i += 2) {
-      out.push(seg[i] * scale + offX, seg[i+1] * scale + offY);
-    }
-    return out;
-  });
-}
 
 function toggleInlayGroup(header) {
   const body = header.nextElementSibling;
@@ -1248,9 +317,15 @@ function bindDimSlider(id, valId) {
   });
 }
 
+function updateInlayEdgeMarginVisibility() {
+  const pos = document.getElementById('inlayPosition').value;
+  const row = document.getElementById('inlayEdgeMarginRow');
+  if (row) row.style.display = (pos === 'top' || pos === 'bottom') ? 'flex' : 'none';
+}
+
 function refreshDimSliderDisplays() {
   const unit = document.getElementById('unit').value;
-  [['inlaySize', 'inlaySizeVal'], ['inlayHeight', 'inlayHeightVal'], ['inlayDoubleOffset', 'inlayDoubleOffsetVal']].forEach(([id, valId]) => {
+  [['inlaySize', 'inlaySizeVal'], ['inlayHeight', 'inlayHeightVal'], ['inlayDoubleOffset', 'inlayDoubleOffsetVal'], ['inlayEdgeMargin', 'inlayEdgeMarginVal']].forEach(([id, valId]) => {
     const el = document.getElementById(id), valEl = document.getElementById(valId);
     if (!el || !valEl) return;
     const mm = parseFloat(el.value);
@@ -1282,7 +357,7 @@ async function calculate() {
     lastResponse = data;
     renderPreview(data);
     renderTable(data);
-    document.getElementById('downloadBtn').classList.remove('disabled');
+    document.querySelectorAll('.dl-btn').forEach(el => el.classList.remove('disabled'));
   } catch (e) {
     M.toast({ html: 'Cannot reach backend — make sure Spring Boot is running on port 8080.', displayLength: 4000 });
   } finally {
@@ -1321,6 +396,7 @@ function buildRequest() {
     inlaySize:            parseFloat(document.getElementById('inlaySize').value),
     inlayHeight:          parseFloat(document.getElementById('inlayHeight').value),
     inlayPosition:           document.getElementById('inlayPosition').value,
+    inlayEdgeMargin:         parseFloat(document.getElementById('inlayEdgeMargin').value),
     inlayDoubleOffset:       parseFloat(document.getElementById('inlayDoubleOffset').value),
     inlayDoubleOrientation:  document.getElementById('inlayDoubleOrientation').value,
     inlayShrinkWidth1224:    parseFloat(document.getElementById('inlayShrinkWidth1224').value),
@@ -1342,12 +418,65 @@ function isValid(req) {
 }
 
 // ── Rendering ─────────────────────────────────────────────────
+function applyDarkThemeToSvg(svgStr) {
+  const vbMatch = svgStr.match(/viewBox="([\s\d.\-]+)"/);
+  let bgRect = '';
+  if (vbMatch) {
+    const [vx, vy, vw, vh] = vbMatch[1].trim().split(/\s+/).map(parseFloat);
+    bgRect = `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#222222"/>`;
+  }
+  // Per-path transform by shaper:cutType, then single-pass remap of guide colors.
+  // Colors chosen for cut paths must not appear in the guide color map sources.
+  let result = svgStr
+    .replace(/<svg([^>]*)>/, `<svg$1>${bgRect}`)
+    .replace(/<path([\s\S]*?)\/>/g, (match, attrs) => {
+      const cutType = (attrs.match(/shaper:cutType="([^"]*)"/) ?? [])[1];
+      switch (cutType) {
+        case 'outside':
+          return '<path' + attrs
+            .replace(/\bfill="[^"]*"/, 'fill="#111111"')
+            .replace(/\bstroke="[^"]*"/, 'stroke="#3a3a3a"') + '/>';
+        case 'inside':
+        case 'pocket':
+          return '<path' + attrs
+            .replace(/\bfill="[^"]*"/, 'fill="#f0f0f0"')
+            .replace(/\bstroke="[^"]*"/, 'stroke="none"') + '/>';
+        case 'online':
+          return '<path' + attrs
+            .replace(/\bstroke="[^"]*"/, 'stroke="#b0b0b0"') + '/>';
+        default:
+          return match;
+      }
+    });
+  const guideColorMap = new Map([
+    ['#333333', '#cccccc'],  // title text
+    ['#aaaaaa', '#666666'],  // center line
+    ['#555555', '#999999'],  // dim annotations / arrowheads
+    ['#888888', '#bbbbbb'],  // fret number labels
+    ['#9e9e9e', '#777777'],  // config code text
+    ['#0288d1', '#4fc3f7'],  // bounding box
+    ['#1565c0', '#64b5f6'],  // pinhole guide marks
+    ['#5cb877', '#a5d6a7'],  // radius line
+    ['#44739c', '#888888'],  // any remaining cut color (fallback)
+  ]);
+  return result.replace(/#[0-9a-f]{6}/gi, m => guideColorMap.get(m.toLowerCase()) ?? m);
+}
+
+function setPreviewDarkMode(dark) {
+  previewDarkMode = dark;
+  document.getElementById('previewLightBtn')?.classList.toggle('preview-mode-active', !dark);
+  document.getElementById('previewDarkBtn')?.classList.toggle('preview-mode-active', dark);
+  if (lastResponse) renderPreview(lastResponse);
+}
+
 function renderPreview(data) {
   const container = document.getElementById('svgContainer');
-  const svgStr = data.svgContent
+  let svgStr = data.svgContent
     .replace(/ width="[^"]*mm"/, '')
     .replace(/ height="[^"]*mm"/, '');
+  if (previewDarkMode) svgStr = applyDarkThemeToSvg(svgStr);
   container.innerHTML = svgStr;
+  container.style.background = previewDarkMode ? '#222222' : '';
   container.style.display = '';
   document.getElementById('emptyState').style.display = 'none';
 }
@@ -1708,85 +837,15 @@ function encodeConfig(s) {
   }
   const dataStr = bits.toString(36).padStart(CONFIG_DATA_CHARS, '0');
   let code = (dataStr + configHashChars(dataStr)).toUpperCase();
-  if (s.inlayShape === 'custom' && Array.isArray(s.inlayCustomPath) && s.inlayCustomPath.length >= 1) {
-    const pathSuffix = encodeCustomPath(s.inlayCustomClosed !== false, s.inlayCustomPath);
+  if (s.inlayShape === 'custom' && Array.isArray(s.inlayCustomPath) &&
+      s.inlayCustomPath.some(sp => sp.length >= 1)) {
+    // URL encoding supports only the first (outer) subpath; multi-subpath state is
+    // preserved in localStorage via the full JSON snapshot.
+    const firstSp    = s.inlayCustomPath[0] || [];
+    const pathSuffix = encodeCustomPath(s.inlayCustomClosed !== false, firstSp);
     if (pathSuffix) code += '.' + pathSuffix.toUpperCase();
   }
   return code;
-}
-
-// ── Custom path encoding ──────────────────────────────────────────────────────
-// Bit layout (packed into a single BigInt, then base-36):
-//   1 bit  : closed (1=filled pocket, 0=open stroke)
-//   5 bits : N = number of additional segments after start (max 31)
-//   8+8    : start point x, y  (each = round(val×255), [0-255])
-//   per segment:
-//     2 bits type: 00=L(line), 01=Q(quad bezier), 10=C(cubic bezier)
-//     coords:  L→x,y (2×8); Q→cpx,cpy,x,y (4×8); C→c1x,c1y,c2x,c2y,x,y (6×8)
-function encodeCustomPath(closed, points) {
-  if (!points || points.length < 1) return '';
-  const enc8 = v => Math.max(0, Math.min(255, Math.round(v * 255)));
-  const segs = points.slice(1);               // additional segments (after start)
-  const N    = Math.min(segs.length, 31);
-  let bits = 0n;
-  const push = (val, nbits) => { bits = (bits << BigInt(nbits)) | BigInt(val); };
-  push(closed ? 1 : 0, 1);
-  push(N, 5);
-  push(enc8(points[0][0]), 8);
-  push(enc8(points[0][1]), 8);
-  for (let i = 0; i < N; i++) {
-    const seg = segs[i];
-    if (seg.length >= 6) {
-      push(2, 2); // cubic
-      for (let j = 0; j < 6; j++) push(enc8(seg[j]), 8);
-    } else if (seg.length >= 4) {
-      push(1, 2); // quad
-      for (let j = 0; j < 4; j++) push(enc8(seg[j]), 8);
-    } else {
-      push(0, 2); // line
-      push(enc8(seg[0]), 8);
-      push(enc8(seg[1]), 8);
-    }
-  }
-  return bits.toString(36);
-}
-
-function decodeCustomPath(suffix) {
-  if (!suffix) return { closed: true, points: [] };
-  let bits = 0n;
-  for (const c of suffix.toLowerCase()) bits = bits * 36n + BigInt(parseInt(c, 36));
-  // Expand BigInt to bit array, MSB first; pad to at least header size (1+5+8+8=22)
-  const allBits = [];
-  let tmp = bits;
-  while (tmp > 0n) { allBits.unshift(Number(tmp & 1n)); tmp >>= 1n; }
-  while (allBits.length < 22) allBits.unshift(0);
-  let pos = 0;
-  const read = (n) => {
-    let v = 0;
-    for (let i = 0; i < n; i++) v = (v << 1) | (allBits[pos++] ?? 0);
-    return v;
-  };
-  const dec8 = v => v / 255;
-  try {
-    const closed = read(1) === 1;
-    const N      = read(5);
-    const sx     = dec8(read(8));
-    const sy     = dec8(read(8));
-    const points = [[sx, sy]];
-    for (let i = 0; i < N; i++) {
-      const type = read(2);
-      if (type === 2) {
-        points.push([read(8),read(8),read(8),read(8),read(8),read(8)].map(dec8));
-      } else if (type === 1) {
-        points.push([read(8),read(8),read(8),read(8)].map(dec8));
-      } else {
-        points.push([dec8(read(8)), dec8(read(8))]);
-      }
-    }
-    return { closed, points };
-  } catch (_) {
-    return { closed: true, points: [] };
-  }
 }
 
 function parseConfigData(dataStr, schema = CONFIG_SCHEMA) {
@@ -1878,7 +937,7 @@ function decodeConfig(raw) {
     showPinholes:         sPH === 1,
     tangWidth:            tw  * 0.1 + 0.1,
     fretExtensionAmount:  fea / 2 - 10,
-    inlayCustomPath:      pathResult.points,
+    inlayCustomPath:      pathResult.points.length > 0 ? [pathResult.points] : [[]],
     inlayCustomClosed:    pathResult.closed,
   };
 }
@@ -1906,6 +965,69 @@ function importCode() {
   }
 }
 
+// ── Actions menu (burger) ─────────────────────────────────────
+function toggleActionsPanel() {
+  const panel = document.getElementById('actionsPanel');
+  if (!panel) return;
+  const opening = panel.style.display === 'none';
+  panel.style.display = opening ? 'block' : 'none';
+  const ic = document.getElementById('actionsMenuBtn')?.querySelector('i.material-icons');
+  if (ic) ic.textContent = opening ? 'close' : 'menu';
+}
+
+document.addEventListener('click', e => {
+  const panel = document.getElementById('actionsPanel');
+  if (!panel || panel.style.display === 'none') return;
+  if (!e.target.closest('#actionsPanel') && !e.target.closest('#actionsMenuBtn')) {
+    panel.style.display = 'none';
+    const ic = document.getElementById('actionsMenuBtn')?.querySelector('i.material-icons');
+    if (ic) ic.textContent = 'menu';
+  }
+}, true);
+
+// ── Preset file save / load ───────────────────────────────────
+function exportPreset() {
+  const name = prompt('Preset name:', 'My Preset');
+  if (name === null) return;
+  const presetName = name.trim() || 'My Preset';
+  const data = Object.assign({ _presetName: presetName, _version: 1 }, stateSnapshot());
+  const json = JSON.stringify(data, null, 2);
+  const safe = presetName.replace(/[^a-zA-Z0-9_\-]/g, '-').replace(/-+/g, '-').slice(0, 60);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), { href: url, download: safe + '.fretpreset.json' });
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importPresetFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (typeof data !== 'object' || data === null || !('scaleLength' in data)) {
+        M.toast({ html: 'Not a valid preset file.', displayLength: 3000 });
+        return;
+      }
+      applyStateData(data);
+      M.updateTextFields();
+      updateUnitHints();
+      updateShapeFields();
+      calculate();
+      const name = data._presetName ? ` "${data._presetName}"` : '';
+      M.toast({ html: `Preset${name} loaded!`, displayLength: 2000 });
+    } catch (_) {
+      M.toast({ html: 'Could not read preset file.', displayLength: 3000 });
+    }
+  };
+  reader.readAsText(file);
+}
+
 // ── Persistence ───────────────────────────────────────────────
 // stateSnapshot always stores dimension values in mm so config codes are unit-independent.
 function stateSnapshot() {
@@ -1927,6 +1049,7 @@ function stateSnapshot() {
     inlaySize:            parseFloat(document.getElementById('inlaySize').value),
     inlayHeight:          parseFloat(document.getElementById('inlayHeight').value),
     inlayPosition:        document.getElementById('inlayPosition').value,
+    inlayEdgeMargin:      parseFloat(document.getElementById('inlayEdgeMargin').value),
     inlayDoubleOffset:    parseFloat(document.getElementById('inlayDoubleOffset').value),
     inlayDoubleOrientation:  document.getElementById('inlayDoubleOrientation').value,
     inlayShrinkWidth1224:    document.getElementById('inlayShrinkWidth1224').value,
@@ -2019,6 +1142,8 @@ function applyStateData(s) {
   setDimSld('inlaySize',         'inlaySizeVal',         s.inlaySize);
   setDimSld('inlayHeight',       'inlayHeightVal',       s.inlayHeight);
   setDimSld('inlayDoubleOffset', 'inlayDoubleOffsetVal', s.inlayDoubleOffset);
+  setDimSld('inlayEdgeMargin',   'inlayEdgeMarginVal',   s.inlayEdgeMargin ?? 1.5);
+  updateInlayEdgeMarginVisibility();
   sld('inlayShrinkWidth1224',  'inlayShrinkWidth1224Val',  s.inlayShrinkWidth1224);
   sld('inlayShrinkHeight1224', 'inlayShrinkHeight1224Val', s.inlayShrinkHeight1224);
   sld('inlayShrinkWidth',   'inlayShrinkWidthVal',   s.inlayShrinkWidth);
@@ -2026,10 +1151,21 @@ function applyStateData(s) {
   sld('inlayTrapezoid',     'inlayTrapezoidVal',     s.inlayTrapezoid);
   sld('inlayParallelogram', 'inlayParallelogramVal', s.inlayParallelogram);
 
-  if (Array.isArray(s.inlayCustomPath)) {
-    customPathPoints = s.inlayCustomPath
-      .filter(p => Array.isArray(p) && (p.length === 2 || p.length === 4 || p.length === 6))
-      .map(p => p.map(Number));
+  if (Array.isArray(s.inlayCustomPath) && s.inlayCustomPath.length > 0) {
+    const validSeg = p => Array.isArray(p) && (p.length === 2 || p.length === 4 || p.length === 6);
+    if (Array.isArray(s.inlayCustomPath[0]) && Array.isArray(s.inlayCustomPath[0][0])) {
+      // New 3-D format: [[subpath0_segs], [subpath1_segs], ...]
+      customPathPoints = s.inlayCustomPath.map(sp =>
+        sp.filter(validSeg).map(p => p.map(Number))
+      );
+    } else {
+      // Legacy 2-D format (single subpath): [[x,y], ...] — wrap in outer array.
+      customPathPoints = [
+        s.inlayCustomPath.filter(validSeg).map(p => p.map(Number))
+      ];
+    }
+    if (customPathPoints.length === 0) customPathPoints = [[]];
+    _cpActiveSubpath = 0;
     customPathRedraw();
   }
   if (typeof s.inlayCustomClosed === 'boolean') {

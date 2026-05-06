@@ -105,6 +105,45 @@
     .preview-card { margin-bottom: 16px; }
     #svgContainer { overflow: hidden; }
     #svgContainer svg { width: 100%; height: auto; display: block; }
+
+    /* ── Preview light/dark toggle buttons ───────────────────── */
+    .preview-theme-btn {
+      padding: 3px 8px; border-radius: 3px; border: 1px solid #e0e0e0;
+      background: #fff; color: #455a64; cursor: pointer;
+      display: flex; align-items: center; gap: 3px;
+      font-size: .72rem; line-height: 1;
+    }
+    .preview-theme-btn.preview-mode-active {
+      background: #e3f2fd; border-color: #0277bd; color: #0277bd;
+    }
+
+    /* ── Custom path editor: maximized overlay ────────────────── */
+    #customPathEditor.cp-maximized {
+      position: fixed !important; inset: 0 !important; z-index: 9999 !important;
+      background: #f5f5f5 !important; padding: 12px !important; margin: 0 !important;
+      display: flex !important; flex-direction: column !important;
+      align-items: center !important; gap: 4px !important; overflow-y: auto !important;
+    }
+    #customPathEditor.cp-maximized #customPathCanvas {
+      order: 2; flex-shrink: 0;
+      width: min(calc(100vw - 24px), calc(100vh - 160px)) !important;
+      height: auto !important; aspect-ratio: 1 !important;
+    }
+    #customPathEditor.cp-maximized #cpCompactBar  { order: 1; width: 100%; }
+    #customPathEditor.cp-maximized #cpRow1        { order: 0; width: 100%; }
+    #customPathEditor.cp-maximized #cpMiscRow     { order: 3; width: 100%; flex-direction: column; }
+    /* Rows shown only in maximized mode */
+    .cp-full-only { display: none !important; }
+    #customPathEditor.cp-maximized .cp-full-only  { display: flex !important; }
+    /* Snap grid step select — match the collapsible-body FormSelect style */
+    #cpRow1 .select-wrapper input.select-dropdown {
+      font-size: .8rem; height: 1.9rem; line-height: 1.9rem;
+      border: 1px solid #e0e0e0 !important; border-radius: 3px;
+      padding: 0 24px 0 8px !important; box-sizing: border-box;
+      box-shadow: none !important; margin: 0 !important;
+    }
+    #cpRow1 .select-wrapper input.select-dropdown:focus { border-color: #0277bd !important; box-shadow: none !important; }
+    #cpRow1 .select-wrapper svg { top: 50%; transform: translateY(-50%); }
   </style>
 </head>
 
@@ -228,24 +267,100 @@
 
               <div id="customPathEditor" style="display:none;margin-bottom:14px">
                 <svg id="customPathCanvas" viewBox="-30 -30 160 160"
+                     onwheel="customPathWheel(event)"
+                     onmouseenter="customPathMouseEnter()"
+                     onmouseleave="customPathMouseLeave()"
                      style="width:100%;aspect-ratio:1;background:#eceff1;border:1px solid #cfd8dc;border-radius:3px;cursor:crosshair;display:block">
                 </svg>
-                <div style="display:flex;gap:4px;margin-top:4px;align-items:stretch">
-                  <button id="customPathModeBtn" onclick="customPathToggleMode()" type="button" title="Line segments"
-                          style="flex:1;padding:3px 0;background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center"></button>
-                  <button id="customPathClosedBtn" onclick="customPathToggleClosed()" type="button" title="Closed (filled area)"
-                          style="flex:1;padding:3px 0;background:#e3f2fd;color:#0277bd;border:1px solid #bbdefb;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center"></button>
-                  <button onclick="customPathRotateClick(event)" type="button" title="Rotate 15° (Shift = counter-clockwise)"
-                          style="flex:1;padding:3px 0;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center"><i class="material-icons" style="font-size:14px;line-height:14px">rotate_right</i></button>
-                  <button onclick="customPathImportClick()" type="button" title="Import SVG"
-                          style="flex:1;padding:3px 0;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center"><i class="material-icons" style="font-size:14px;line-height:14px">file_upload</i></button>
-                  <button onclick="customPathClear()" type="button" title="Clear"
-                          style="flex:1;padding:3px 0;background:#fff;color:#c62828;border:1px solid #ffcdd2;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center"><i class="material-icons" style="font-size:14px;line-height:14px">delete</i></button>
-                </div>
+
                 <input type="file" id="customPathFileInput" accept=".svg,image/svg+xml" style="display:none">
-                <p style="font-size:.66rem;color:#9e9e9e;margin:6px 0 0;line-height:1.35">
-                  Click empty area to add a vertex (line or arc by mode). Click an edge to insert a vertex. Drag handles to reshape; <b style="color:#455a64">Shift-drag</b> to move; right-click to remove. Drop an SVG file onto the canvas or use Import to load a path.
-                </p>
+
+                <!-- Compact bar: always visible in both default and maximized modes -->
+                <div id="cpCompactBar" style="display:flex;gap:3px;margin-top:4px;align-items:center">
+                  <button id="cpMaximizeBtn" onclick="customPathToggleMaximize()" type="button" title="Expand editor"
+                          style="padding:3px 6px;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center">
+                    <i class="material-icons" style="font-size:14px;line-height:14px">open_in_full</i>
+                  </button>
+                  <div style="flex:1"></div>
+                  <button onclick="cpResetView();customPathRedraw();" type="button" title="Reset zoom &amp; pan"
+                          style="padding:3px 6px;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center">
+                    <i class="material-icons" style="font-size:14px;line-height:14px">zoom_out_map</i>
+                  </button>
+                  <button onclick="customPathRotate(-15)" type="button" title="Rotate 15° counter-clockwise"
+                          style="padding:3px 6px;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center">
+                    <i class="material-icons" style="font-size:14px;line-height:14px">rotate_left</i>
+                  </button>
+                  <button onclick="customPathRotate(15)" type="button" title="Rotate 15° clockwise"
+                          style="padding:3px 6px;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center">
+                    <i class="material-icons" style="font-size:14px;line-height:14px">rotate_right</i>
+                  </button>
+
+                  <button onclick="customPathClear()" type="button" title="Delete active subpath (clears if only one)"
+                          style="padding:3px 6px;background:#fff;color:#c62828;border:1px solid #ffcdd2;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center">
+                    <i class="material-icons" style="font-size:14px;line-height:14px">delete</i>
+                  </button>
+                  <button onclick="customPathExportSvg()" type="button" title="Export SVG"
+                          style="padding:3px 6px;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center">
+                    <i class="material-icons" style="font-size:14px;line-height:14px">file_download</i>
+                  </button>
+                  <button onclick="customPathImportClick()" type="button" title="Import SVG"
+                          style="padding:3px 6px;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center">
+                    <i class="material-icons" style="font-size:14px;line-height:14px">file_upload</i>
+                  </button>
+
+                </div>
+
+                <!-- Row 1: History + Draw mode + Path type (maximized only) -->
+                <div id="cpRow1" class="cp-full-only" style="gap:3px;margin-top:4px;align-items:center;flex-wrap:wrap">
+                  <button id="cpUndoBtn" onclick="cpUndo()" type="button" title="Undo (Ctrl+Z)"
+                          style="padding:3px 6px;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:.35" disabled>
+                    <i class="material-icons" style="font-size:14px;line-height:14px">undo</i>
+                  </button>
+                  <button id="cpRedoBtn" onclick="cpRedo()" type="button" title="Redo (Ctrl+Y)"
+                          style="padding:3px 6px;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:.35" disabled>
+                    <i class="material-icons" style="font-size:14px;line-height:14px">redo</i>
+                  </button>
+                  <div style="width:1px;height:20px;background:#cfd8dc;flex-shrink:0;margin:0 1px"></div>
+                  <div style="display:flex;border:1px solid #cfd8dc;border-radius:3px;overflow:hidden;flex-shrink:0">
+                    <button id="cpLineModeBtn" onclick="customPathSetMode(false)" type="button" title="Line segments"
+                            style="padding:3px 7px;border:none;border-right:1px solid #cfd8dc;cursor:pointer;display:flex;align-items:center;gap:3px;font-size:.65rem;background:#0277bd;color:#fff">
+                      <i class="material-icons" style="font-size:13px;line-height:1">horizontal_rule</i>Line
+                    </button>
+                    <button id="cpArcModeBtn" onclick="customPathSetMode(true)" type="button" title="Arc / Bézier segments"
+                            style="padding:3px 7px;border:none;cursor:pointer;display:flex;align-items:center;gap:3px;font-size:.65rem;background:#fff;color:#455a64">
+                      <i class="material-icons" style="font-size:13px;line-height:1">gesture</i>Arc
+                    </button>
+                  </div>
+                  <div style="width:1px;height:20px;background:#cfd8dc;flex-shrink:0;margin:0 1px"></div>
+                  <button onclick="customPathAddSubpath()" type="button" title="Add subpath — for shapes with holes (e.g. letter &#39;A&#39;)"
+                          style="padding:3px 6px;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center">
+                    <i class="material-icons" style="font-size:14px;line-height:14px">add_circle_outline</i>
+                  </button>
+                  <span id="cpSubpathIndicator" style="font-size:.65rem;color:#0277bd;font-weight:500;letter-spacing:.02em"></span>
+                  <div style="width:1px;height:20px;background:#cfd8dc;flex-shrink:0;margin:0 1px"></div>
+                  <div style="display:flex;border:1px solid #cfd8dc;border-radius:3px;overflow:hidden;flex-shrink:0">
+                    <button id="cpFilledBtn" onclick="customPathSetClosed(true)" type="button" title="Closed — filled pocket cut"
+                            style="padding:3px 7px;border:none;border-right:1px solid #cfd8dc;cursor:pointer;display:flex;align-items:center;gap:3px;font-size:.65rem;background:#0277bd;color:#fff">
+                      <i class="material-icons" style="font-size:13px;line-height:1">category</i>Filled
+                    </button>
+                    <button id="cpStrokeBtn" onclick="customPathSetClosed(false)" type="button" title="Open — stroke / line cut"
+                            style="padding:3px 7px;border:none;cursor:pointer;display:flex;align-items:center;gap:3px;font-size:.65rem;background:#fff;color:#455a64">
+                      <i class="material-icons" style="font-size:13px;line-height:1">polyline</i>Stroke
+                    </button>
+                  </div>
+                  <div style="width:1px;height:20px;background:#cfd8dc;flex-shrink:0;margin:0 1px"></div>
+                  <button id="cpSnapBtn" onclick="customPathToggleSnap()" type="button" title="Snap to grid — points snap to the selected grid when placing or dragging"
+                          style="padding:3px 6px;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;gap:3px;font-size:.65rem">
+                    <i class="material-icons" style="font-size:13px;line-height:1">grid_on</i>Snap
+                  </button>
+                  <select id="cpGridStepSel" onchange="customPathSetGridStep(parseFloat(this.value))"
+                          title="Snap grid density">
+                    <option value="0.2">1/5</option>
+                    <option value="0.1" selected>1/10</option>
+                    <option value="0.05">1/20</option>
+                    <option value="0.025">1/40</option>
+                  </select>
+                </div>
               </div>
 
               <div class="input-field">
@@ -255,6 +370,11 @@
                   <option value="bottom">Bass edge</option>
                 </select>
                 <label>Position</label>
+              </div>
+              <div id="inlayEdgeMarginRow" style="display:none;align-items:center;gap:8px;margin-bottom:10px">
+                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Edge margin</span>
+                <div class="range-field" style="flex:1;margin:0"><input id="inlayEdgeMargin" type="range" min="0" max="10" step="0.5" value="1.5"></div>
+                <b id="inlayEdgeMarginVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">1.5 mm</b>
               </div>
 
               <div class="input-field">
@@ -448,37 +568,68 @@
       </ul><!-- /collapsible -->
     </div><!-- /left-scroll -->
 
-    <!-- Download + config always visible at bottom of left panel -->
-    <div id="left-actions">
-      <div style="padding:8px 12px 8px">
-        <a id="downloadBtn"
-           class="btn light-blue darken-1 waves-effect waves-light disabled dropdown-trigger"
-           data-target="downloadMenu"
-           style="width:100%;text-align:center;display:flex;align-items:center;justify-content:center">
-          <i class="material-icons left">download</i>Download<i class="material-icons right">arrow_drop_down</i>
+    <input type="file" id="presetFileInput" accept=".json" style="display:none"
+           onchange="importPresetFile(this)">
+
+    <!-- Action panel: hidden by default, toggled by the burger button -->
+    <div id="actionsPanel" style="display:none;flex-shrink:0;padding:14px 16px 10px;background:#fff;border-top:1px solid rgba(0,0,0,.1)">
+
+      <p style="margin:0 0 6px;font-size:.72rem;color:#9e9e9e;font-weight:500;text-transform:uppercase;letter-spacing:.04em">Download</p>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px">
+        <a class="dl-btn btn-small light-blue darken-1 waves-effect waves-light disabled" onclick="downloadSvg()"
+           title="Download full SVG" style="display:flex;align-items:center;gap:3px">
+          <i class="material-icons" style="font-size:15px;line-height:inherit">download</i>Full SVG
         </a>
-        <ul id="downloadMenu" class="dropdown-content">
-          <li><a onclick="downloadSvg()"><i class="material-icons">download</i>Full SVG</a></li>
-          <li><a onclick="downloadPdf()"><i class="material-icons">picture_as_pdf</i>PDF</a></li>
-          <li class="divider" tabindex="-1"></li>
-          <li><a onclick="downloadLayerSvg('frets')" title="SVG without inlays — fret slots, outline, nut"><i class="material-icons">straighten</i>Frets layer</a></li>
-          <li><a onclick="downloadLayerSvg('inlays')" title="SVG with inlay pockets only"><i class="material-icons">adjust</i>Inlays layer</a></li>
-        </ul>
+        <a class="dl-btn btn-small light-blue darken-1 waves-effect waves-light disabled" onclick="downloadPdf()"
+           title="Download PDF" style="display:flex;align-items:center;gap:3px">
+          <i class="material-icons" style="font-size:15px;line-height:inherit">picture_as_pdf</i>PDF
+        </a>
+        <a class="dl-btn btn-small light-blue darken-1 waves-effect waves-light disabled" onclick="downloadLayerSvg('frets')"
+           title="SVG without inlays — fret slots, outline, nut" style="display:flex;align-items:center;gap:3px">
+          <i class="material-icons" style="font-size:15px;line-height:inherit">straighten</i>Frets
+        </a>
+        <a class="dl-btn btn-small light-blue darken-1 waves-effect waves-light disabled" onclick="downloadLayerSvg('inlays')"
+           title="SVG with inlay pockets only" style="display:flex;align-items:center;gap:3px">
+          <i class="material-icons" style="font-size:15px;line-height:inherit">adjust</i>Inlays
+        </a>
       </div>
-      <div style="padding:0 12px 10px">
-        <p style="margin:0 0 4px;font-size:.72rem;color:#9e9e9e">Configuration code</p>
-        <div style="display:flex;gap:5px;align-items:center">
-          <input id="configCodeInput" type="text" placeholder="Paste code to import…"
-                 class="browser-default"
-                 style="flex:1;border:1px solid #bdbdbd;border-radius:4px;padding:4px 7px;font-size:.75rem;min-width:0">
-          <a class="btn-small light-blue darken-1 waves-effect waves-light" onclick="importCode()" title="Apply code">
-            <i class="material-icons" style="font-size:16px;line-height:inherit">login</i>
-          </a>
-          <a class="btn-small light-blue darken-1 waves-effect waves-light" onclick="exportCode()" title="Copy code">
-            <i class="material-icons" style="font-size:16px;line-height:inherit">content_copy</i>
-          </a>
-        </div>
+
+      <p style="margin:0 0 6px;font-size:.72rem;color:#9e9e9e;font-weight:500;text-transform:uppercase;letter-spacing:.04em">Presets</p>
+      <div style="display:flex;gap:5px;margin-bottom:14px">
+        <a class="btn-small light-blue darken-1 waves-effect waves-light" onclick="exportPreset()"
+           title="Save current settings as a preset JSON file"
+           style="flex:1;display:flex;align-items:center;justify-content:center;gap:4px">
+          <i class="material-icons" style="font-size:15px;line-height:inherit">save</i>Save
+        </a>
+        <a class="btn-small light-blue darken-1 waves-effect waves-light"
+           onclick="document.getElementById('presetFileInput').click()"
+           title="Load settings from a preset JSON file"
+           style="flex:1;display:flex;align-items:center;justify-content:center;gap:4px">
+          <i class="material-icons" style="font-size:15px;line-height:inherit">folder_open</i>Load
+        </a>
       </div>
+
+      <p style="margin:0 0 4px;font-size:.72rem;color:#9e9e9e;font-weight:500;text-transform:uppercase;letter-spacing:.04em">Configuration code</p>
+      <div style="display:flex;gap:5px;align-items:center">
+        <input id="configCodeInput" type="text" placeholder="Paste code to import…"
+               class="browser-default"
+               style="flex:1;border:1px solid #bdbdbd;border-radius:4px;padding:4px 7px;font-size:.75rem;min-width:0">
+        <a class="btn-small light-blue darken-1 waves-effect waves-light" onclick="importCode()" title="Apply code">
+          <i class="material-icons" style="font-size:16px;line-height:inherit">login</i>
+        </a>
+        <a class="btn-small light-blue darken-1 waves-effect waves-light" onclick="exportCode()" title="Copy code">
+          <i class="material-icons" style="font-size:16px;line-height:inherit">content_copy</i>
+        </a>
+      </div>
+    </div><!-- /actionsPanel -->
+
+    <!-- Burger bar -->
+    <div id="left-actions">
+      <button id="actionsMenuBtn" onclick="toggleActionsPanel()" type="button"
+              title="Download, presets &amp; configuration"
+              style="width:100%;height:44px;background:transparent;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;color:#455a64;font-size:.78rem">
+        <i class="material-icons" style="font-size:20px">menu</i>
+      </button>
     </div><!-- /left-actions -->
   </div><!-- /left-panel -->
 
@@ -492,6 +643,16 @@
           <i class="material-icons tiny" style="color:#0277bd">straighten</i>
           <span style="font-weight:500;font-size:1rem">Live Preview</span>
           <span id="previewSubtitle" style="font-size:.78rem;color:#9e9e9e;margin-left:4px"></span>
+          <div style="margin-left:auto;display:flex;gap:3px">
+            <button id="previewLightBtn" onclick="setPreviewDarkMode(false)" type="button"
+                    class="preview-theme-btn preview-mode-active" title="Light background">
+              <i class="material-icons" style="font-size:14px;line-height:1">wb_sunny</i>Light
+            </button>
+            <button id="previewDarkBtn" onclick="setPreviewDarkMode(true)" type="button"
+                    class="preview-theme-btn" title="Dark background — ebony/rosewood style">
+              <i class="material-icons" style="font-size:14px;line-height:1">nights_stay</i>Dark
+            </button>
+          </div>
         </div>
 
         <div id="progressBar" class="progress light-blue lighten-4" style="display:none">
@@ -528,7 +689,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script th:src="@{/js/app.js(v=17)}"></script>
+<script th:src="@{/js/custom-path-editor.js(v=8)}"></script>
+<script th:src="@{/js/app.js(v=21)}"></script>
 
 </body>
 </html>
