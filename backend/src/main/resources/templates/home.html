@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Luthier Tools</title>
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap">
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+
+  <style>
+    body { background: #f5f0eb; min-height: 100vh; }
+
+    .hero {
+      background: linear-gradient(135deg, #3e2723 0%, #4e342e 50%, #6d4c41 100%);
+      color: #fff;
+      padding: 72px 0 56px;
+      text-align: center;
+    }
+    .hero h1 {
+      margin: 0 0 10px;
+      font-weight: 300;
+      font-size: 2.8rem;
+      letter-spacing: .03em;
+    }
+    .hero p {
+      margin: 0;
+      color: #d7ccc8;
+      font-size: 1.05rem;
+    }
+
+    .app-card {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      border-radius: 8px !important;
+      transition: box-shadow .18s ease, transform .18s ease;
+    }
+    .app-card:hover {
+      box-shadow: 0 8px 28px rgba(0,0,0,.18) !important;
+      transform: translateY(-4px);
+    }
+    .app-card .card-content { padding-bottom: 12px; }
+    .app-card .card-icon {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 18px;
+    }
+    .app-card .card-icon i { font-size: 28px; color: #fff; }
+    .app-card .app-title {
+      font-size: 1.25rem;
+      font-weight: 500;
+      margin: 0 0 10px;
+    }
+    .app-card .app-desc {
+      color: #6d4c41;
+      font-size: .9rem;
+      line-height: 1.65;
+      margin: 0;
+    }
+    .app-card .card-action { border-top: 1px solid rgba(0,0,0,.08) !important; }
+    .app-card .card-action a {
+      font-weight: 500;
+      font-size: .85rem;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Navbar ───────────────────────────────────────────────── -->
+<nav style="background:#4e342e">
+  <div class="nav-wrapper" style="padding:0 16px">
+    <a href="/" class="brand-logo" style="font-size:1.2rem">
+      <i class="material-icons" style="vertical-align:middle;margin-right:6px;font-size:1.3rem">construction</i>
+      Luthier Tools
+    </a>
+  </div>
+</nav>
+
+<!-- ── Hero ─────────────────────────────────────────────────── -->
+<div class="hero">
+  <h1>Luthier Tools</h1>
+  <p>CNC-ready fretboard design tools for instrument builders</p>
+</div>
+
+<!-- ── App cards ─────────────────────────────────────────────── -->
+<div class="container" style="margin-top:48px;margin-bottom:48px">
+  <div class="row">
+
+    <!-- Fretboard Layout -->
+    <div class="col s12 m6">
+      <a href="/layout" class="app-card card z-depth-1">
+        <div class="card-content">
+          <div class="card-icon" style="background:#0277bd">
+            <i class="material-icons">straighten</i>
+          </div>
+          <p class="app-title" style="color:#0277bd">Fretboard Layout</p>
+          <p class="app-desc">
+            Calculate fret positions, design inlay markers, nut slots and radius
+            contours. Export precision CNC-ready SVG files for Shaper Origin.
+          </p>
+        </div>
+        <div class="card-action">
+          <a href="/layout" style="color:#0277bd">
+            Open
+            <i class="material-icons" style="font-size:1rem">arrow_forward</i>
+          </a>
+        </div>
+      </a>
+    </div>
+
+    <!-- Fretboard Lighting -->
+    <div class="col s12 m6">
+      <a href="/lighting" class="app-card card z-depth-1">
+        <div class="card-content">
+          <div class="card-icon" style="background:#e65100">
+            <i class="material-icons">lightbulb</i>
+          </div>
+          <p class="app-title" style="color:#e65100">Fretboard Lighting</p>
+          <p class="app-desc">
+            Route LED channels and pockets for illuminated fretboards. Generates
+            electrical layout SVGs with LED type specifications and channel counts.
+          </p>
+        </div>
+        <div class="card-action">
+          <a href="/lighting" style="color:#e65100">
+            Open
+            <i class="material-icons" style="font-size:1rem">arrow_forward</i>
+          </a>
+        </div>
+      </a>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+<script th:src="@{/js/home.js}"></script>
+</body>
+</html>

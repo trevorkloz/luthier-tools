@@ -8,7 +8,7 @@ let importedScaleLength       = 648;
 let importedNumberOfFrets     = 22;
 let importedNutWidth          = 42;
 let importedWidth12thFret     = 52;
-let importedInlayDoubleOffset = 8;
+let importedInlayDoubleOffsetV = 8;
 let importedShowInlays        = true;
 let importedDoubleInlays      = true;
 let importedInlayPosition     = 'center';
@@ -25,7 +25,8 @@ function applyLightingSync(p, triggerCalc = true) {
   if (p.numberOfFrets     != null) importedNumberOfFrets     = p.numberOfFrets;
   if (p.nutWidth          != null) importedNutWidth          = p.nutWidth;
   if (p.width12thFret     != null) importedWidth12thFret     = p.width12thFret;
-  if (p.inlayDoubleOffset != null) importedInlayDoubleOffset = p.inlayDoubleOffset;
+  if (p.inlayDoubleOffsetV != null) importedInlayDoubleOffsetV = p.inlayDoubleOffsetV;
+  else if (p.inlayDoubleOffset != null) importedInlayDoubleOffsetV = p.inlayDoubleOffset;
   if (p.showInlays        != null) importedShowInlays        = p.showInlays;
   if (p.doubleInlays      != null) importedDoubleInlays      = p.doubleInlays;
   if (p.inlayPosition     != null) importedInlayPosition     = p.inlayPosition;
@@ -83,7 +84,7 @@ function buildRequest() {
     numberOfFrets:     importedNumberOfFrets,
     nutWidth:          importedNutWidth,
     width12thFret:     importedWidth12thFret,
-    inlayDoubleOffset: importedInlayDoubleOffset,
+    inlayDoubleOffsetV: importedInlayDoubleOffsetV,
     trussRodWidth:     parseFloat(document.getElementById('trussRodWidth').value),
     showInlays:        importedShowInlays,
     doubleInlays:      importedDoubleInlays,

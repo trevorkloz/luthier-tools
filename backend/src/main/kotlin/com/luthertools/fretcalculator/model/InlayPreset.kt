@@ -28,27 +28,23 @@ sealed class InlayPreset(
                 else -> ctx.centerY
             }
             return if (ctx.isDouble) {
-                val ho = ctx.effectiveInlayDoubleOffset / 2.0
+                val hoH  = ctx.effectiveInlayDoubleOffsetH / 2.0
+                val effV = ctx.effectiveInlayDoubleOffsetV
+                val hoV  = effV / 2.0
                 when (ctx.doubleOrientation) {
-                    InlayDoubleOrientation.HORIZONTAL -> {
-                        listOf(
-                            circle("${ctx.baseId}a", ctx.cx - ho, y), circle("${ctx.baseId}b", ctx.cx + ho, y)
-                        )
-                    }
-                    InlayDoubleOrientation.STAGGERED -> {
-                        listOf(
-                            circle("${ctx.baseId}a", ctx.cx - ho, ctx.centerY - ho),
-                            circle("${ctx.baseId}b", ctx.cx + ho, ctx.centerY + ho)
-                        )
-                    }
-                    else -> { // vertical
+                    InlayDoubleOrientation.HORIZONTAL -> listOf(
+                        circle("${ctx.baseId}a", ctx.cx - hoH, y - hoV),
+                        circle("${ctx.baseId}b", ctx.cx + hoH, y + hoV),
+                    )
+                    else -> { // VERTICAL
                         val (y1, y2) = when (ctx.position) {
-                            InlayPosition.TOP -> Pair(y, y + ctx.effectiveInlayDoubleOffset)
-                            InlayPosition.BOTTOM -> Pair(y - ctx.effectiveInlayDoubleOffset, y)
-                            else -> Pair(ctx.centerY - ho, ctx.centerY + ho)
+                            InlayPosition.TOP    -> Pair(y,        y + effV)
+                            InlayPosition.BOTTOM -> Pair(y - effV, y)
+                            else                 -> Pair(ctx.centerY - hoV, ctx.centerY + hoV)
                         }
                         listOf(
-                            circle("${ctx.baseId}a", ctx.cx, y1), circle("${ctx.baseId}b", ctx.cx, y2)
+                            circle("${ctx.baseId}a", ctx.cx - hoH, y1),
+                            circle("${ctx.baseId}b", ctx.cx + hoH, y2),
                         )
                     }
                 }
@@ -105,29 +101,23 @@ sealed class InlayPreset(
                 }
             }
             return if (ctx.isDouble) {
-                val ho = ctx.effectiveInlayDoubleOffset / 2.0
+                val hoH  = ctx.effectiveInlayDoubleOffsetH / 2.0
+                val effV = ctx.effectiveInlayDoubleOffsetV
+                val hoV  = effV / 2.0
                 when (ctx.doubleOrientation) {
-                    InlayDoubleOrientation.HORIZONTAL -> {
-                        listOf(
-                            rect("${ctx.baseId}a", ctx.cx - ho, ctx.midDist - ho),
-                            rect("${ctx.baseId}b", ctx.cx + ho, ctx.midDist + ho)
-                        )
-                    }
-                    InlayDoubleOrientation.STAGGERED -> {
-                        listOf(
-                            rect("${ctx.baseId}a", ctx.cx - ho, ctx.midDist, -ho),
-                            rect("${ctx.baseId}b", ctx.cx + ho, ctx.midDist, +ho)
-                        )
-                    }
-                    else -> { // vertical
+                    InlayDoubleOrientation.HORIZONTAL -> listOf(
+                        rect("${ctx.baseId}a", ctx.cx - hoH, ctx.midDist - hoH, -hoV),
+                        rect("${ctx.baseId}b", ctx.cx + hoH, ctx.midDist + hoH, +hoV),
+                    )
+                    else -> { // VERTICAL
                         val (dy1, dy2) = when (ctx.position) {
-                            InlayPosition.TOP -> Pair(0.0, ctx.effectiveInlayDoubleOffset)
-                            InlayPosition.BOTTOM -> Pair(-ctx.effectiveInlayDoubleOffset, 0.0)
-                            else -> Pair(-ho, +ho)
+                            InlayPosition.TOP    -> Pair(0.0,   effV)
+                            InlayPosition.BOTTOM -> Pair(-effV, 0.0)
+                            else                 -> Pair(-hoV,  +hoV)
                         }
                         listOf(
-                            rect("${ctx.baseId}a", ctx.cx, ctx.midDist, dy1),
-                            rect("${ctx.baseId}b", ctx.cx, ctx.midDist, dy2)
+                            rect("${ctx.baseId}a", ctx.cx - hoH, ctx.midDist, dy1),
+                            rect("${ctx.baseId}b", ctx.cx + hoH, ctx.midDist, dy2),
                         )
                     }
                 }
@@ -227,25 +217,23 @@ sealed class InlayPreset(
             }
 
             return if (ctx.isDouble) {
-                val ho = ctx.effectiveInlayDoubleOffset / 2.0
+                val hoH  = ctx.effectiveInlayDoubleOffsetH / 2.0
+                val effV = ctx.effectiveInlayDoubleOffsetV
+                val hoV  = effV / 2.0
                 when (ctx.doubleOrientation) {
                     InlayDoubleOrientation.HORIZONTAL -> listOf(
-                        shape("${ctx.baseId}a", -ho, 0.0),
-                        shape("${ctx.baseId}b", +ho, 0.0)
-                    ).flatten()
-                    InlayDoubleOrientation.STAGGERED -> listOf(
-                        shape("${ctx.baseId}a", -ho, -ho),
-                        shape("${ctx.baseId}b", +ho, +ho)
+                        shape("${ctx.baseId}a", -hoH, -hoV),
+                        shape("${ctx.baseId}b", +hoH, +hoV),
                     ).flatten()
                     else -> { // VERTICAL
                         val (dy1, dy2) = when (ctx.position) {
-                            InlayPosition.TOP    -> Pair(0.0, ctx.effectiveInlayDoubleOffset)
-                            InlayPosition.BOTTOM -> Pair(-ctx.effectiveInlayDoubleOffset, 0.0)
-                            else                 -> Pair(-ho, +ho)
+                            InlayPosition.TOP    -> Pair(0.0,   effV)
+                            InlayPosition.BOTTOM -> Pair(-effV, 0.0)
+                            else                 -> Pair(-hoV,  +hoV)
                         }
                         listOf(
-                            shape("${ctx.baseId}a", 0.0, dy1),
-                            shape("${ctx.baseId}b", 0.0, dy2)
+                            shape("${ctx.baseId}a", -hoH, dy1),
+                            shape("${ctx.baseId}b", +hoH, dy2),
                         ).flatten()
                     }
                 }
@@ -273,27 +261,23 @@ sealed class InlayPreset(
             }
 
             return if (ctx.isDouble) {
-                val ho = ctx.effectiveInlayDoubleOffset / 2.0
+                val hoH  = ctx.effectiveInlayDoubleOffsetH / 2.0
+                val effV = ctx.effectiveInlayDoubleOffsetV
+                val hoV  = effV / 2.0
                 when (ctx.doubleOrientation) {
-                    InlayDoubleOrientation.HORIZONTAL -> {
-                        listOf(
-                            diamond("${ctx.baseId}a", ctx.cx - ho, y), diamond("${ctx.baseId}b", ctx.cx + ho, y)
-                        )
-                    }
-                    InlayDoubleOrientation.STAGGERED -> {
-                        listOf(
-                            diamond("${ctx.baseId}a", ctx.cx - ho, ctx.centerY - ho),
-                            diamond("${ctx.baseId}b", ctx.cx + ho, ctx.centerY + ho)
-                        )
-                    }
-                    else -> { // vertical
+                    InlayDoubleOrientation.HORIZONTAL -> listOf(
+                        diamond("${ctx.baseId}a", ctx.cx - hoH, y - hoV),
+                        diamond("${ctx.baseId}b", ctx.cx + hoH, y + hoV),
+                    )
+                    else -> { // VERTICAL
                         val (y1, y2) = when (ctx.position) {
-                            InlayPosition.TOP -> Pair(y, y + ctx.effectiveInlayDoubleOffset)
-                            InlayPosition.BOTTOM -> Pair(y - ctx.effectiveInlayDoubleOffset, y)
-                            else -> Pair(ctx.centerY - ho, ctx.centerY + ho)
+                            InlayPosition.TOP    -> Pair(y,        y + effV)
+                            InlayPosition.BOTTOM -> Pair(y - effV, y)
+                            else                 -> Pair(ctx.centerY - hoV, ctx.centerY + hoV)
                         }
                         listOf(
-                            diamond("${ctx.baseId}a", ctx.cx, y1), diamond("${ctx.baseId}b", ctx.cx, y2)
+                            diamond("${ctx.baseId}a", ctx.cx - hoH, y1),
+                            diamond("${ctx.baseId}b", ctx.cx + hoH, y2),
                         )
                     }
                 }

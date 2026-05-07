@@ -22,6 +22,8 @@ let _cpActiveSubpath = 0;   // index of the currently-edited subpath
 let customPathArcMode = false;
 let customPathClosed = true;   // true → render filled closed area; false → open lines only
 let customPathDrag = null;     // { mode, target, downXn, downYn, moved, ... }
+let _cpSelectedTarget = null; // { segIndex, coordOffset } of selected vertex/CP, or null
+let _cpNudging = false;       // true during a held arrow-key nudge run (prevents flooding history)
 let customPathCmdHeld = false; // true while Cmd (Mac) or Ctrl (Win) is pressed
 let customPathSnapGrid = false;
 let customPathGridStep  = 0.1; // normalized grid step when snap is active (default: 10 divisions)
@@ -95,6 +97,7 @@ function cpUndo() {
   customPathPoints = s.points.map(sp => sp.map(seg => seg.slice()));
   customPathClosed = s.closed;
   _cpActiveSubpath = Math.min(s.activeSubpath, customPathPoints.length - 1);
+  _cpSelectedTarget = null; _cpNudging = false;
   customPathRedraw();
   scheduleCalculate();
 }
@@ -106,6 +109,7 @@ function cpRedo() {
   customPathPoints = s.points.map(sp => sp.map(seg => seg.slice()));
   customPathClosed = s.closed;
   _cpActiveSubpath = Math.min(s.activeSubpath, customPathPoints.length - 1);
+  _cpSelectedTarget = null; _cpNudging = false;
   customPathRedraw();
   scheduleCalculate();
 }
@@ -134,12 +138,43 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'z' && !e.shiftKey)                          { e.preventDefault(); cpUndo(); }
     else if (e.key === 'y' || (e.key === 'z' && e.shiftKey))  { e.preventDefault(); cpRedo(); }
   }
+  // Arrow-key nudge — only in maximized mode and only when a vertex/CP is selected.
+  if (_cpMaximized && _cpSelectedTarget
+      && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    e.preventDefault();
+    const pts = customPathPoints[_cpActiveSubpath];
+    const t   = _cpSelectedTarget;
+    if (!pts[t.segIndex] || pts[t.segIndex].length <= t.coordOffset + 1) return;
+    if (!_cpNudging) { cpHistoryPush(); _cpNudging = true; }
+    const step = customPathSnapGrid ? customPathGridStep : 0.01;
+    const oldX = pts[t.segIndex][t.coordOffset];
+    const oldY = pts[t.segIndex][t.coordOffset + 1];
+    const newX = Math.max(0, Math.min(1, oldX + (e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0)));
+    const newY = Math.max(0, Math.min(1, oldY + (e.key === 'ArrowUp'   ? -step : e.key === 'ArrowDown'  ? step : 0)));
+    pts[t.segIndex][t.coordOffset]     = newX;
+    pts[t.segIndex][t.coordOffset + 1] = newY;
+    // Keep the closing edge in sync when the start vertex is nudged.
+    if (t.segIndex === 0 && t.coordOffset === 0) {
+      const eps = 0.0005;
+      for (let i = 1; i < pts.length; i++) {
+        const seg = pts[i], endOff = seg.length - 2;
+        if (endOff >= 0 && Math.abs(seg[endOff] - oldX) < eps && Math.abs(seg[endOff + 1] - oldY) < eps) {
+          seg[endOff] = newX; seg[endOff + 1] = newY;
+        }
+      }
+    }
+    customPathRedraw();
+    scheduleCalculate();
+  }
 });
 
 document.addEventListener('keyup', function(e) {
   if (e.key === ' ') {
     _cpSpaceHeld = false;
     if (!customPathDrag) customPathUpdateCursor();
+  }
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    _cpNudging = false;
   }
 });
 
@@ -343,6 +378,7 @@ function customPathHitTest(xn, yn) {
 function customPathDeleteTarget(target) {
   if (target.kind === 'switchSubpath') return; // read-only — ignore
   cpHistoryPush();
+  _cpSelectedTarget = null;
   const pts = customPathPoints[_cpActiveSubpath];
   const i   = target.segIndex;
   if (target.kind === 'cp') {
@@ -710,15 +746,18 @@ function customPathMouseUp(evt) {
     if (drag.target.kind === 'switchSubpath') {
       // Tap on an inactive subpath (vertex or edge) → make it the active one.
       _cpActiveSubpath = drag.target.subpathIndex;
+      _cpSelectedTarget = null;
       customPathRedraw();
       return;
     }
+    // Select the tapped vertex or control point for arrow-key nudging.
+    _cpSelectedTarget = { segIndex: drag.target.segIndex, coordOffset: drag.target.coordOffset };
     // Tap on the start vertex with ≥3 segments: close gesture (no new point added).
     if (drag.target.kind === 'vertex' && drag.target.segIndex === 0
         && customPathPoints[_cpActiveSubpath].length >= 3) {
-      customPathRedraw();
       scheduleCalculate();
     }
+    customPathRedraw();
     return;
   }
 
@@ -753,6 +792,7 @@ function customPathMouseUp(evt) {
     if (dx * dx + dy * dy < nearR2) return;
   }
 
+  _cpSelectedTarget = null;
   customPathClick(evt);
 }
 
@@ -874,6 +914,9 @@ function customPathRedraw() {
 
   // Vertex circles — all subpaths; active at full opacity, inactive dimmed to 35%.
   // Non-start vertices drawn first, start vertex last so it wins z-order.
+  // Selected vertex/CP gets an orange highlight ring.
+  const selRing = (xs, ys) =>
+    `<circle cx="${xs}" cy="${ys}" r="${rVert * 2.8}" fill="none" stroke="#f57c00" stroke-width="${swVert * 2}"/>`;
   let verts = '';
   for (let si = 0; si < customPathPoints.length; si++) {
     const sp       = customPathPoints[si];
@@ -881,14 +924,19 @@ function customPathRedraw() {
     const opacity  = isActive ? 1.0 : 0.35;
     for (let i = 1; i < sp.length; i++) {
       const [vx, vy] = customPathSegEnd(sp[i]);
+      const endOff = sp[i].length - 2;
+      const sel = isActive && _cpSelectedTarget && _cpSelectedTarget.segIndex === i && _cpSelectedTarget.coordOffset === endOff;
       const [vxs, vys] = nXY(vx, vy);
-      verts += `<circle cx="${vxs}" cy="${vys}" r="${rVert}" fill="#fff" stroke="#0277bd" stroke-width="${swVert}" opacity="${opacity}"/>`;
+      if (sel) verts += selRing(vxs, vys);
+      verts += `<circle cx="${vxs}" cy="${vys}" r="${rVert}" fill="${sel ? '#ffe0b2' : '#fff'}" stroke="${sel ? '#f57c00' : '#0277bd'}" stroke-width="${swVert}" opacity="${opacity}"/>`;
     }
     if (sp.length > 0) {
       const [sx2, sy2] = sp[0];
+      const sel = isActive && _cpSelectedTarget && _cpSelectedTarget.segIndex === 0 && _cpSelectedTarget.coordOffset === 0;
       const [sxs, sys] = nXY(sx2, sy2);
-      const startFill  = isActive ? '#0277bd' : '#90caf9'; // solid blue for active start, lighter for inactive
-      verts += `<circle cx="${sxs}" cy="${sys}" r="${rVert}" fill="${startFill}" stroke="#0277bd" stroke-width="${swVert}" opacity="${opacity}" title="Subpath ${si + 1}"/>`;
+      const startFill  = isActive ? (sel ? '#f57c00' : '#0277bd') : '#90caf9';
+      if (sel) verts += selRing(sxs, sys);
+      verts += `<circle cx="${sxs}" cy="${sys}" r="${rVert}" fill="${startFill}" stroke="${sel ? '#f57c00' : '#0277bd'}" stroke-width="${swVert}" opacity="${opacity}" title="Subpath ${si + 1}"/>`;
     }
   }
 
@@ -901,9 +949,10 @@ function customPathRedraw() {
     const [prevXs, prevYs] = nXY(prevEnd[0], prevEnd[1]);
     const [cpx, cpy] = nXY(seg[0], seg[1]);
     const [ex,  ey ] = nXY(seg[2], seg[3]);
+    const sel = _cpSelectedTarget && _cpSelectedTarget.segIndex === i && _cpSelectedTarget.coordOffset === 0;
     return `<line x1="${prevXs}" y1="${prevYs}" x2="${cpx}" y2="${cpy}" stroke="#cfd8dc" stroke-width="${swArm}" stroke-dasharray="${daArm},${daArm}"/>`
          + `<line x1="${ex}" y1="${ey}" x2="${cpx}" y2="${cpy}" stroke="#cfd8dc" stroke-width="${swArm}" stroke-dasharray="${daArm},${daArm}"/>`
-         + `<rect x="${cpx - sqHalf}" y="${cpy - sqHalf}" width="${sqHalf * 2}" height="${sqHalf * 2}" fill="#fff" stroke="#9e9e9e" stroke-width="${swSq}"/>`;
+         + `<rect x="${cpx - sqHalf}" y="${cpy - sqHalf}" width="${sqHalf * 2}" height="${sqHalf * 2}" fill="${sel ? '#f57c00' : '#fff'}" stroke="${sel ? '#f57c00' : '#9e9e9e'}" stroke-width="${swSq}"/>`;
   }).join('');
 
   // Set innerHTML before the viewBox attribute: some browsers reset SVG attributes when
@@ -998,6 +1047,7 @@ function customPathToggleMaximize() {
 
 function customPathClear() {
   cpHistoryPush();
+  _cpSelectedTarget = null;
   if (customPathPoints.length === 1) {
     customPathPoints[0] = [];
   } else {
@@ -1099,9 +1149,44 @@ function customPathRotateClick(evt) {
   customPathRotate(evt.shiftKey ? -15 : 15);
 }
 
+// Flip all subpaths together around the shared bounding-box centre.
+// Horizontal: mirror left↔right (negate x around cx). Vertical: mirror top↔bottom (negate y around cy).
+function customPathFlip(axis) {
+  if (customPathPoints.every(sp => sp.length === 0)) return;
+  cpHistoryPush();
+  _cpSelectedTarget = null;
+  // Find the shared centroid so the shape stays centred after the flip.
+  let minX = 1, minY = 1, maxX = 0, maxY = 0;
+  for (const sp of customPathPoints) {
+    for (const seg of sp) {
+      for (let k = 0; k < seg.length; k += 2) {
+        if (seg[k]     < minX) minX = seg[k];
+        if (seg[k]     > maxX) maxX = seg[k];
+        if (seg[k + 1] < minY) minY = seg[k + 1];
+        if (seg[k + 1] > maxY) maxY = seg[k + 1];
+      }
+    }
+  }
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  customPathPoints = customPathPoints.map(sp =>
+    sp.map(seg => {
+      const next = seg.slice();
+      for (let k = 0; k < seg.length; k += 2) {
+        if (axis === 'h') next[k]     = 2 * cx - seg[k];
+        else              next[k + 1] = 2 * cy - seg[k + 1];
+      }
+      return next;
+    })
+  );
+  customPathRedraw();
+  scheduleCalculate();
+}
+
 // Add a new empty subpath and make it active.
 function customPathAddSubpath() {
   cpHistoryPush();
+  _cpSelectedTarget = null;
   customPathPoints.push([]);
   _cpActiveSubpath = customPathPoints.length - 1;
   customPathRedraw();
@@ -1218,6 +1303,7 @@ function customPathImportSvg(svgText) {
   customPathPoints = normalized;
   _cpActiveSubpath = 0;
   customPathClosed = true; // imports default to closed/filled
+  _cpSelectedTarget = null;
   customPathRedraw();
   scheduleCalculate();
 }

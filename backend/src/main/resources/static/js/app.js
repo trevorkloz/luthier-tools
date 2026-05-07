@@ -15,7 +15,7 @@ const DIM_FIELDS = [
   { id: 'tangWidth',           mmMin: 0.1,   mmMax: 3.0,   mmStep: 0.01, inStep: 0.001 },
   { id: 'fretExtensionAmount', mmMin: -10,   mmMax: 20,    mmStep: 0.5,  inStep: 0.02  },
 ];
-// inlaySize, inlayHeight, inlayDoubleOffset are mm-fixed range sliders — not in DIM_FIELDS.
+// inlaySize, inlayHeight, inlayDoubleOffsetV, inlayDoubleOffsetH are mm-fixed range sliders — not in DIM_FIELDS.
 
 const PRESETS = [
   { name: 'Classical Guitar (650 mm)',       scaleLength: 650, nutWidth: 52, width12thFret: 60, numberOfFrets: 19, radius: 0   },
@@ -50,7 +50,7 @@ function publishLightingSync() {
       numberOfFrets:     req.numberOfFrets,
       nutWidth:          req.nutWidth,
       width12thFret:     req.width12thFret,
-      inlayDoubleOffset: req.inlayDoubleOffset,
+      inlayDoubleOffsetV: req.inlayDoubleOffsetV,
       showInlays:        req.showInlays,
       doubleInlays:      req.doubleInlays,
       inlayPosition:     req.inlayPosition,
@@ -82,10 +82,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     el.addEventListener('input', scheduleCalculate);
   });
 
-  bindDimSlider('inlaySize',          'inlaySizeVal');
-  bindDimSlider('inlayHeight',        'inlayHeightVal');
-  bindDimSlider('inlayDoubleOffset',  'inlayDoubleOffsetVal');
-  bindDimSlider('inlayEdgeMargin',    'inlayEdgeMarginVal');
+  bindDimSlider('inlaySize',           'inlaySizeVal');
+  bindDimSlider('inlayHeight',         'inlayHeightVal');
+  bindDimSlider('inlayDoubleOffsetV',  'inlayDoubleOffsetVVal');
+  bindDimSlider('inlayDoubleOffsetH',  'inlayDoubleOffsetHVal');
+  bindDimSlider('inlayEdgeMargin',     'inlayEdgeMarginVal');
   bindSlider('inlayShrinkWidth1224',  'inlayShrinkWidth1224Val');
   bindSlider('inlayShrinkHeight1224', 'inlayShrinkHeight1224Val');
   bindSlider('inlayShrinkWidth',    'inlayShrinkWidthVal');
@@ -129,7 +130,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.getElementById('inlayPosition').addEventListener('change', () => { updateInlayEdgeMarginVisibility(); scheduleCalculate(); });
   document.getElementById('inlayDoubleOrientation').addEventListener('change', scheduleCalculate);
+  document.getElementById('doubleInlays').addEventListener('change', updateDoubleMarkerControls);
   updateInlayEdgeMarginVisibility();
+  updateDoubleMarkerControls();
 
   const cpCanvas = document.getElementById('customPathCanvas');
   cpCanvas.addEventListener('mousedown',   customPathMouseDown);
@@ -323,9 +326,27 @@ function updateInlayEdgeMarginVisibility() {
   if (row) row.style.display = (pos === 'top' || pos === 'bottom') ? 'flex' : 'none';
 }
 
+function updateDoubleMarkerControls() {
+  const on = document.getElementById('doubleInlays')?.checked ?? false;
+  const opacity = on ? '1' : '0.4';
+  const pointer = on ? '' : 'none';
+  ['inlayDoubleOrientationRow', 'inlayDoubleOffsetVRow', 'inlayDoubleOffsetHRow'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.opacity = opacity;
+    el.style.pointerEvents = pointer;
+  });
+  const sel = document.getElementById('inlayDoubleOrientation');
+  if (sel) sel.disabled = !on;
+  ['inlayDoubleOffsetV', 'inlayDoubleOffsetH'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !on;
+  });
+}
+
 function refreshDimSliderDisplays() {
   const unit = document.getElementById('unit').value;
-  [['inlaySize', 'inlaySizeVal'], ['inlayHeight', 'inlayHeightVal'], ['inlayDoubleOffset', 'inlayDoubleOffsetVal'], ['inlayEdgeMargin', 'inlayEdgeMarginVal']].forEach(([id, valId]) => {
+  [['inlaySize', 'inlaySizeVal'], ['inlayHeight', 'inlayHeightVal'], ['inlayDoubleOffsetV', 'inlayDoubleOffsetVVal'], ['inlayDoubleOffsetH', 'inlayDoubleOffsetHVal'], ['inlayEdgeMargin', 'inlayEdgeMarginVal']].forEach(([id, valId]) => {
     const el = document.getElementById(id), valEl = document.getElementById(valId);
     if (!el || !valEl) return;
     const mm = parseFloat(el.value);
@@ -398,7 +419,8 @@ function buildRequest() {
     inlayHeight:          parseFloat(document.getElementById('inlayHeight').value),
     inlayPosition:           document.getElementById('inlayPosition').value,
     inlayEdgeMargin:         parseFloat(document.getElementById('inlayEdgeMargin').value),
-    inlayDoubleOffset:       parseFloat(document.getElementById('inlayDoubleOffset').value),
+    inlayDoubleOffsetV:      parseFloat(document.getElementById('inlayDoubleOffsetV').value),
+    inlayDoubleOffsetH:      parseFloat(document.getElementById('inlayDoubleOffsetH').value),
     inlayDoubleOrientation:  document.getElementById('inlayDoubleOrientation').value,
     inlayShrinkWidth1224:    parseFloat(document.getElementById('inlayShrinkWidth1224').value),
     inlayShrinkHeight1224:   parseFloat(document.getElementById('inlayShrinkHeight1224').value),
@@ -794,15 +816,18 @@ function setLoading(loading) {
 //   showFretNumbers(1) showCenterLine(1) showWidthAnnotations(1)
 //   showInlays(1) doubleInlays(1) doubleOrientation(2) showBoundingBox(1)
 //   inlayShape(3) inlaySize(7) inlayHeight(7) inlayPosition(2)
-//   inlayDoubleOffset(7) inlayShrinkWidth1224(5) inlayShrinkHeight1224(5) inlayShrinkWidth(5) inlayGrowHeight(8)
+//   inlayDoubleOffsetV(7) inlayShrinkWidth1224(5) inlayShrinkHeight1224(5) inlayShrinkWidth(5) inlayGrowHeight(8)
 //   inlayTrapezoid(7) inlayParallelogram(7) showRadius(1) radiusValue(12) radiusSteps(4)
 //   showNutSlot(1) nutSlotWidth(5) nutSlotDistance(6)
-//   showPinholes(1) tangWidth(5) fretExtensionAmount(6)  = 147 bits
-const CONFIG_SCHEMA = [12,6,8,8,1,1,1,1,1,1,2,1,3,7,7,2,7,5,5,5,8,7,7,1,12,4,1,5,6,1,5,6];
-// Legacy schema (codes generated before bidirectional sliders, 143 bits → 28 data chars)
-const CONFIG_SCHEMA_LEGACY = [12,6,8,8,1,1,1,1,1,1,2,1,3,7,7,2,7,4,4,4,7,7,7,1,12,4,1,5,6,1,5,6];
-const CONFIG_DATA_CHARS = 29;
-const CONFIG_DATA_CHARS_LEGACY = 28;
+//   showPinholes(1) tangWidth(5) fretExtensionAmount(6) inlayDoubleOffsetH(7)  = 154 bits
+const CONFIG_SCHEMA = [12,6,8,8,1,1,1,1,1,1,2,1,3,7,7,2,7,5,5,5,8,7,7,1,12,4,1,5,6,1,5,6,7];
+// Legacy-v2: before inlayDoubleOffsetH was added (147 bits → 29 data chars)
+const CONFIG_SCHEMA_LEGACY_V2 = [12,6,8,8,1,1,1,1,1,1,2,1,3,7,7,2,7,5,5,5,8,7,7,1,12,4,1,5,6,1,5,6];
+// Legacy-v1: before bidirectional sliders (143 bits → 28 data chars)
+const CONFIG_SCHEMA_LEGACY_V1 = [12,6,8,8,1,1,1,1,1,1,2,1,3,7,7,2,7,4,4,4,7,7,7,1,12,4,1,5,6,1,5,6];
+const CONFIG_DATA_CHARS          = 30;
+const CONFIG_DATA_CHARS_LEGACY_V2 = 29;
+const CONFIG_DATA_CHARS_LEGACY_V1 = 28;
 const CONFIG_HASH_CHARS = 4;
 const CONFIG_CHARS      = CONFIG_DATA_CHARS + CONFIG_HASH_CHARS;
 const CONFIG_HASH_MOD   = Math.pow(36, CONFIG_HASH_CHARS); // 1,679,616
@@ -833,13 +858,13 @@ function encodeConfig(s) {
     s.showWidthAnnotations ? 1 : 0,                              //  1 bit
     s.showInlays           ? 1 : 0,                              //  1 bit
     s.doubleInlays         ? 1 : 0,                              //  1 bit
-    s.inlayDoubleOrientation === 'horizontal' ? 1 : s.inlayDoubleOrientation === 'staggered' ? 2 : 0, // 2 bits
+    s.inlayDoubleOrientation === 'horizontal' ? 1 : 0,                          //  2 bits  (staggered removed)
     s.showBoundingBox      ? 1 : 0,                              //  1 bit
     Math.max(0, inlayPresets.findIndex(p => p.id === s.inlayShape)), //  3 bits
     Math.round(parseFloat(s.inlaySize)         * 2),             //  7 bits  0-100 (0-50mm)
     Math.round(parseFloat(s.inlayHeight)       * 2),             //  7 bits  0-100 (0-50mm)
     s.inlayPosition === 'center' ? 0 : s.inlayPosition === 'top' ? 1 : 2, // 2 bits
-    Math.round(parseFloat(s.inlayDoubleOffset)      * 2),         //  7 bits  0-100 (0-50mm)
+    Math.round(parseFloat(s.inlayDoubleOffsetV)     * 2),          //  7 bits  0-100 (0-50mm)
     Math.round(parseFloat(s.inlayShrinkWidth1224)  / 0.05) + 15, //  5 bits  0-30 (−0.75…+0.75, offset +15)
     Math.round(parseFloat(s.inlayShrinkHeight1224) / 0.05) + 15, //  5 bits  0-30
     Math.round(parseFloat(s.inlayShrinkWidth)      / 0.25) + 8,  //  5 bits  0-16 (−2…+2,     offset +8)
@@ -855,6 +880,7 @@ function encodeConfig(s) {
     s.showPinholes         ? 1 : 0,                              //  1 bit
     Math.round((parseFloat(s.tangWidth) - 0.1) / 0.1),           //  5 bits  0-29 (0.1-3.0mm)
     Math.round((parseFloat(s.fretExtensionAmount) + 10) * 2),    //  6 bits  -10 to +21.5mm step 0.5
+    Math.round(parseFloat(s.inlayDoubleOffsetH)  * 2),           //  7 bits  0-100 (0-50mm)
   ];
   let bits = 0n;
   for (let i = 0; i < fields.length; i++) {
@@ -893,12 +919,21 @@ function decodeConfig(raw) {
   const mainCode = dotIdx >= 0 ? full.slice(0, dotIdx) : full;
   const pathCode = dotIdx >= 0 ? full.slice(dotIdx + 1) : null;
 
-  // Accept both the current 33-char format and the legacy 32-char format (before
-  // bidirectional sliders were introduced — the four affected fields default to 0).
-  const legacy = mainCode.length === CONFIG_DATA_CHARS_LEGACY + CONFIG_HASH_CHARS;
-  const expectedLen = legacy ? CONFIG_DATA_CHARS_LEGACY + CONFIG_HASH_CHARS : CONFIG_CHARS;
-  const dataChars   = legacy ? CONFIG_DATA_CHARS_LEGACY : CONFIG_DATA_CHARS;
-  const schema      = legacy ? CONFIG_SCHEMA_LEGACY : CONFIG_SCHEMA;
+  // Accept the current 34-char format and two legacy formats:
+  //   32 chars (legacy-v1, before bidirectional sliders)
+  //   33 chars (legacy-v2, before inlayDoubleOffsetH was added)
+  const legacyV1 = mainCode.length === CONFIG_DATA_CHARS_LEGACY_V1 + CONFIG_HASH_CHARS;
+  const legacyV2 = mainCode.length === CONFIG_DATA_CHARS_LEGACY_V2 + CONFIG_HASH_CHARS;
+  const expectedLen = legacyV1 ? CONFIG_DATA_CHARS_LEGACY_V1 + CONFIG_HASH_CHARS
+                    : legacyV2 ? CONFIG_DATA_CHARS_LEGACY_V2 + CONFIG_HASH_CHARS
+                    : CONFIG_CHARS;
+  const dataChars   = legacyV1 ? CONFIG_DATA_CHARS_LEGACY_V1
+                    : legacyV2 ? CONFIG_DATA_CHARS_LEGACY_V2
+                    : CONFIG_DATA_CHARS;
+  const schema      = legacyV1 ? CONFIG_SCHEMA_LEGACY_V1
+                    : legacyV2 ? CONFIG_SCHEMA_LEGACY_V2
+                    : CONFIG_SCHEMA;
+  const legacy      = legacyV1; // signed-field flag: only V1 used unsigned encoding
 
   if (mainCode.length !== expectedLen || !/^[0-9a-z]+$/.test(mainCode)) throw new Error('Invalid code');
 
@@ -923,8 +958,8 @@ function decodeConfig(raw) {
   const dataStr = [...candidates][0];
 
   const vals = parseConfigData(dataStr, schema);
-  const [sl,nf,nw,w12,unit,sfn,scl,swa,si,di,dO,sbb,shape,isz,ih,ip,ido,sw1224,sh1224,sw,gh,trap,para,
-         showR,rv,rs,sNS,nsw,nsd,sPH,tw,fea] = vals;
+  const [sl,nf,nw,w12,unit,sfn,scl,swa,si,di,dO,sbb,shape,isz,ih,ip,idoV,sw1224,sh1224,sw,gh,trap,para,
+         showR,rv,rs,sNS,nsw,nsd,sPH,tw,fea,idoH] = vals;
 
   const pathResult = pathCode ? decodeCustomPath(pathCode) : { closed: true, points: [] };
 
@@ -939,13 +974,14 @@ function decodeConfig(raw) {
     showWidthAnnotations: swa === 1,
     showInlays:           si  === 1,
     doubleInlays:            di  === 1,
-    inlayDoubleOrientation:  dO === 0 ? 'vertical' : dO === 1 ? 'horizontal' : 'staggered',
+    inlayDoubleOrientation:  dO === 1 ? 'horizontal' : 'vertical', // staggered (dO=2) in old codes maps to vertical
     showBoundingBox:         sbb === 1,
     inlayShape:           inlayPresets[shape]?.id ?? 'circle',
     inlaySize:            isz / 2,
     inlayHeight:          ih  / 2,
     inlayPosition:        ip === 0 ? 'center' : ip === 1 ? 'top' : 'bottom',
-    inlayDoubleOffset:     ido   / 2,
+    inlayDoubleOffsetV:  idoV  / 2,
+    inlayDoubleOffsetH:  (legacyV1 || legacyV2) ? 0 : (idoH ?? 0) / 2,
     // New: signed encoding with offset. Legacy codes used 0-based (offset 0) so values stay ≥ 0.
     inlayShrinkWidth1224:  legacy ? sw1224 * 0.05        : (sw1224 - 15) * 0.05,
     inlayShrinkHeight1224: legacy ? sh1224 * 0.05        : (sh1224 - 15) * 0.05,
@@ -1075,7 +1111,8 @@ function stateSnapshot() {
     inlayHeight:          parseFloat(document.getElementById('inlayHeight').value),
     inlayPosition:        document.getElementById('inlayPosition').value,
     inlayEdgeMargin:      parseFloat(document.getElementById('inlayEdgeMargin').value),
-    inlayDoubleOffset:    parseFloat(document.getElementById('inlayDoubleOffset').value),
+    inlayDoubleOffsetV:      parseFloat(document.getElementById('inlayDoubleOffsetV').value),
+    inlayDoubleOffsetH:      parseFloat(document.getElementById('inlayDoubleOffsetH').value),
     inlayDoubleOrientation:  document.getElementById('inlayDoubleOrientation').value,
     inlayShrinkWidth1224:    document.getElementById('inlayShrinkWidth1224').value,
     inlayShrinkHeight1224:   document.getElementById('inlayShrinkHeight1224').value,
@@ -1152,8 +1189,9 @@ function applyStateData(s) {
     if (sel) { sel.value = s.inlayPosition; M.FormSelect.init(sel); }
   }
   if (s.inlayDoubleOrientation) {
+    const ori = s.inlayDoubleOrientation === 'staggered' ? 'vertical' : s.inlayDoubleOrientation;
     const sel = document.getElementById('inlayDoubleOrientation');
-    if (sel) { sel.value = s.inlayDoubleOrientation; M.FormSelect.init(sel); }
+    if (sel) { sel.value = ori; M.FormSelect.init(sel); }
   }
 
   const setDimSld = (id, valId, v) => {
@@ -1164,10 +1202,12 @@ function applyStateData(s) {
     const u = document.getElementById('unit').value;
     valEl.textContent = u === 'inch' ? (v / MM_PER_IN).toFixed(3) + ' in' : parseFloat(v).toFixed(1) + ' mm';
   };
-  setDimSld('inlaySize',         'inlaySizeVal',         s.inlaySize);
-  setDimSld('inlayHeight',       'inlayHeightVal',       s.inlayHeight);
-  setDimSld('inlayDoubleOffset', 'inlayDoubleOffsetVal', s.inlayDoubleOffset);
-  setDimSld('inlayEdgeMargin',   'inlayEdgeMarginVal',   s.inlayEdgeMargin ?? 1.5);
+  setDimSld('inlaySize',          'inlaySizeVal',          s.inlaySize);
+  setDimSld('inlayHeight',        'inlayHeightVal',        s.inlayHeight);
+  setDimSld('inlayDoubleOffsetV', 'inlayDoubleOffsetVVal', s.inlayDoubleOffsetV ?? s.inlayDoubleOffset ?? 8);
+  setDimSld('inlayDoubleOffsetH', 'inlayDoubleOffsetHVal', s.inlayDoubleOffsetH ?? 0);
+  setDimSld('inlayEdgeMargin',    'inlayEdgeMarginVal',    s.inlayEdgeMargin ?? 1.5);
+  updateDoubleMarkerControls();
   updateInlayEdgeMarginVisibility();
   sld('inlayShrinkWidth1224',  'inlayShrinkWidth1224Val',  s.inlayShrinkWidth1224);
   sld('inlayShrinkHeight1224', 'inlayShrinkHeight1224Val', s.inlayShrinkHeight1224);

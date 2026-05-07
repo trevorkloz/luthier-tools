@@ -5,13 +5,12 @@ import com.fasterxml.jackson.annotation.JsonValue
 
 enum class InlayDoubleOrientation(val value: String) {
     VERTICAL("vertical"),
-    HORIZONTAL("horizontal"),
-    STAGGERED("staggered");
+    HORIZONTAL("horizontal");
 
     @JsonValue fun toValue() = value
 
     companion object {
         @JsonCreator @JvmStatic
-        fun fromValue(v: String) = entries.first { it.value == v }
+        fun fromValue(v: String) = entries.firstOrNull { it.value == v } ?: VERTICAL
     }
 }

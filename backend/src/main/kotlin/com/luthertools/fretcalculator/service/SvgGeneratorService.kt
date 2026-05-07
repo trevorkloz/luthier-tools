@@ -155,15 +155,15 @@ class SvgGeneratorService {
                     val scale1224H = if (inlayFret in doubleFrets) (1.0 - request.inlayShrinkHeight1224) else 1.0
                     val effectiveSize   = request.inlaySize   * scaleW * scale1224W
                     val effectiveHeight = request.inlayHeight * scaleH * scale1224H
-                    // The pair offset is along the inlay's spread axis. For HORIZONTAL doubles
-                    // that axis runs along the fret direction (so it should shrink with fret spacing
-                    // toward the heel); for VERTICAL/STAGGERED it runs across the fretboard width,
-                    // which doesn't collapse the way fret spacing does — keep it unscaled there.
-                    val effectiveInlayDoubleOffset =
+                    // V offset runs across the fretboard (does not scale with fret spacing).
+                    // H offset runs along the fret direction; scale it for HORIZONTAL orientation
+                    // so the pair spacing stays visually consistent toward the heel.
+                    val effDoubleV = request.inlayDoubleOffsetV
+                    val effDoubleH =
                         if (request.inlayDoubleOrientation == InlayDoubleOrientation.HORIZONTAL)
-                            request.inlayDoubleOffset * scaleW
+                            request.inlayDoubleOffsetH * scaleW
                         else
-                            request.inlayDoubleOffset
+                            request.inlayDoubleOffsetH
 
                     val preset = INLAY_PRESETS.find { it.id == request.inlayShape } ?: INLAY_PRESETS.first()
                     val ctx = InlayShapeCtx(
@@ -175,7 +175,8 @@ class SvgGeneratorService {
                         trap              = request.inlayTrapezoid,
                         parallelogram     = request.inlayParallelogram,
                         edgePad           = effectiveSize / 2.0 + request.inlayEdgeMargin,
-                        effectiveInlayDoubleOffset      = effectiveInlayDoubleOffset,
+                        effectiveInlayDoubleOffsetV = effDoubleV,
+                        effectiveInlayDoubleOffsetH = effDoubleH,
                         isDouble          = request.doubleInlays && inlayFret in doubleFrets,
                         position          = request.inlayPosition,
                         doubleOrientation = request.inlayDoubleOrientation,
@@ -335,15 +336,16 @@ class SvgGeneratorService {
                 val inlayX   = x0 + midDist
                 val isDouble = request.doubleInlays && inlayFret in doubleFrets
 
+                val vOff = request.inlayDoubleOffsetV
                 val yCenters: List<Double> = when (request.inlayPosition) {
                     InlayPosition.TOP    -> if (isDouble)
-                        listOf(yTop(midDist) + edgePad, yTop(midDist) + edgePad + request.inlayDoubleOffset)
+                        listOf(yTop(midDist) + edgePad, yTop(midDist) + edgePad + vOff)
                     else listOf(yTop(midDist) + edgePad)
                     InlayPosition.BOTTOM -> if (isDouble)
-                        listOf(yBottom(midDist) - edgePad - request.inlayDoubleOffset, yBottom(midDist) - edgePad)
+                        listOf(yBottom(midDist) - edgePad - vOff, yBottom(midDist) - edgePad)
                     else listOf(yBottom(midDist) - edgePad)
                     else                 -> if (isDouble)   // CENTER
-                        listOf(centerY - request.inlayDoubleOffset / 2.0, centerY + request.inlayDoubleOffset / 2.0)
+                        listOf(centerY - vOff / 2.0, centerY + vOff / 2.0)
                     else listOf(centerY)
                 }
                 yCenters.forEach { yc -> wires.add(Wire(inlayFret, inlayX, yc)) }
@@ -438,7 +440,8 @@ class SvgGeneratorService {
             val fretNumber: Int,
             val effSize: Double,
             val effHeight: Double,
-            val effOffset: Double,
+            val effOffsetV: Double,
+            val effOffsetH: Double,
             val isDouble: Boolean,
         )
 
@@ -456,10 +459,11 @@ class SvgGeneratorService {
                 fretNumber = inlayFret,
                 effSize    = request.inlaySize   * scaleW * scale1224W,
                 effHeight  = request.inlayHeight * scaleH * scale1224H,
-                effOffset  = if (request.inlayDoubleOrientation == InlayDoubleOrientation.HORIZONTAL)
-                                 request.inlayDoubleOffset * scaleW
+                effOffsetV = request.inlayDoubleOffsetV,
+                effOffsetH = if (request.inlayDoubleOrientation == InlayDoubleOrientation.HORIZONTAL)
+                                 request.inlayDoubleOffsetH * scaleW
                              else
-                                 request.inlayDoubleOffset,
+                                 request.inlayDoubleOffsetH,
                 isDouble   = request.doubleInlays && inlayFret in doubleFrets,
             ))
         }
@@ -467,13 +471,12 @@ class SvgGeneratorService {
         if (shapes.isEmpty()) return buildSvg(50.0, 20.0, "Inlays Sheet — no frets") {}
 
         // Group identical shapes (0.1 mm tolerance via f1())
-        fun FretShape.key() = "${effSize.f1()}_${effHeight.f1()}_${effOffset.f1()}_$isDouble"
+        fun FretShape.key() = "${effSize.f1()}_${effHeight.f1()}_${effOffsetV.f1()}_${effOffsetH.f1()}_$isDouble"
         val groups = LinkedHashMap<String, Pair<FretShape, MutableList<Int>>>()
         for (s in shapes) groups.getOrPut(s.key()) { Pair(s, mutableListOf()) }.second.add(s.fretNumber)
         val groupList = groups.values.toList()
 
         // Bounding box per group (shape extent including double-offset and parallelogram spread)
-        val ori      = request.inlayDoubleOrientation
         val paraAbs  = abs(request.inlayParallelogram)
         val trAbs    = abs(request.inlayTrapezoid)
         fun bounds(fs: FretShape): Pair<Double, Double> {
@@ -483,11 +486,7 @@ class SvgGeneratorService {
             val sW    = fs.effSize + paraAbs * baseH
             val sH    = effH
             if (!fs.isDouble) return Pair(sW, sH)
-            return when (ori) {
-                InlayDoubleOrientation.HORIZONTAL -> Pair(fs.effOffset + sW,          sH)
-                InlayDoubleOrientation.STAGGERED  -> Pair(fs.effOffset + sW, fs.effOffset + sH)
-                else                               -> Pair(sW,          fs.effOffset + sH)
-            }
+            return Pair(fs.effOffsetH + sW, fs.effOffsetV + sH)
         }
 
         val CELL_PAD = 7.0
@@ -549,15 +548,16 @@ class SvgGeneratorService {
                 val yBottomVal = cellCy + sH / 2.0 + shapeEdgeInset
 
                 val ctx = InlayShapeCtx(
-                    baseId                     = "sheet-$idx",
-                    cx                         = cellCx,
-                    midDist                    = 0.0,
-                    effectiveSize              = fs.effSize,
-                    effectiveHeight            = fs.effHeight,
-                    trap                       = request.inlayTrapezoid,
-                    parallelogram              = request.inlayParallelogram,
-                    edgePad                    = fs.effSize / 2.0 + request.inlayEdgeMargin,
-                    effectiveInlayDoubleOffset = fs.effOffset,
+                    baseId                      = "sheet-$idx",
+                    cx                          = cellCx,
+                    midDist                     = 0.0,
+                    effectiveSize               = fs.effSize,
+                    effectiveHeight             = fs.effHeight,
+                    trap                        = request.inlayTrapezoid,
+                    parallelogram               = request.inlayParallelogram,
+                    edgePad                     = fs.effSize / 2.0 + request.inlayEdgeMargin,
+                    effectiveInlayDoubleOffsetV = fs.effOffsetV,
+                    effectiveInlayDoubleOffsetH = fs.effOffsetH,
                     isDouble                   = fs.isDouble,
                     position                   = request.inlayPosition,
                     doubleOrientation          = request.inlayDoubleOrientation,

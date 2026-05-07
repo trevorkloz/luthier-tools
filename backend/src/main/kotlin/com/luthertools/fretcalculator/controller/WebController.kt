@@ -7,7 +7,10 @@ import org.springframework.web.bind.annotation.GetMapping
 class WebController {
 
     @GetMapping("/")
-    fun index(): String = "index"
+    fun home(): String = "home"
+
+    @GetMapping("/layout")
+    fun layout(): String = "index"
 
     @GetMapping("/lighting")
     fun lighting(): String = "lighting"

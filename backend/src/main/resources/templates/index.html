@@ -155,8 +155,9 @@
     <p style="color:#fff;font-weight:500;margin:0;font-size:1rem">Luthier Tools</p>
     <p style="color:#b3e5fc;margin:0;font-size:.78rem">Shaper Origin Utilities</p>
   </div></li>
+  <li><a href="/"><i class="material-icons">home</i>Home</a></li>
   <li><div class="subheader">Use Cases</div></li>
-  <li class="active"><a href="/"><i class="material-icons">straighten</i>Fretboard Layout</a></li>
+  <li class="active"><a href="/layout"><i class="material-icons">straighten</i>Fretboard Layout</a></li>
   <li><a href="/lighting"><i class="material-icons">lightbulb</i>Fretboard Lighting</a></li>
   <li><div class="divider"></div></li>
 </ul>
@@ -167,7 +168,7 @@
     <a href="#" data-target="slide-out" class="sidenav-trigger">
       <i class="material-icons">menu</i>
     </a>
-    <a href="/" class="brand-logo center" style="font-size:1.1rem">
+    <a href="/layout" class="brand-logo center" style="font-size:1.1rem">
       <i class="material-icons" style="vertical-align:middle;margin-right:4px">straighten</i>
       Fretboard Layout
     </a>
@@ -179,8 +180,6 @@
   <a href="/">Luthier Tools</a>
   <span class="sep">/</span>
   <span class="current">Fretboard Layout</span>
-  <span class="sep" style="margin-left:16px">|</span>
-  <a href="/lighting" style="margin-left:6px">Fretboard Lighting</a>
 </div>
 
 <!-- ── App layout ───────────────────────────────────────────── -->
@@ -294,6 +293,14 @@
                           style="padding:3px 6px;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center">
                     <i class="material-icons" style="font-size:14px;line-height:14px">rotate_right</i>
                   </button>
+                  <button onclick="customPathFlip('h')" type="button" title="Flip horizontal (mirror left↔right)"
+                          style="padding:3px 6px;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center">
+                    <i class="material-icons" style="font-size:14px;line-height:14px">flip</i>
+                  </button>
+                  <button onclick="customPathFlip('v')" type="button" title="Flip vertical (mirror top↔bottom)"
+                          style="padding:3px 6px;background:#fff;color:#455a64;border:1px solid #cfd8dc;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center">
+                    <i class="material-icons" style="font-size:14px;line-height:14px;transform:rotate(90deg)">flip</i>
+                  </button>
 
                   <button onclick="customPathClear()" type="button" title="Delete active subpath (clears if only one)"
                           style="padding:3px 6px;background:#fff;color:#c62828;border:1px solid #ffcdd2;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center">
@@ -377,11 +384,10 @@
                 <b id="inlayEdgeMarginVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">1.5 mm</b>
               </div>
 
-              <div class="input-field">
+              <div class="input-field" id="inlayDoubleOrientationRow">
                 <select id="inlayDoubleOrientation">
                   <option value="vertical" selected>Vertical (across fretboard width)</option>
                   <option value="horizontal">Horizontal (along fret direction)</option>
-                  <option value="staggered">Staggered (diagonal)</option>
                 </select>
                 <label>Double Marker Orientation</label>
               </div>
@@ -418,10 +424,15 @@
               <i class="material-icons" style="font-size:1rem;color:#bdbdbd">expand_more</i>
             </div>
             <div style="padding-left:14px">
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:0">
-                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Pair offset</span>
-                <div class="range-field" style="flex:1;margin:0"><input id="inlayDoubleOffset" type="range" min="0" max="50" step="0.5" value="8"></div>
-                <b id="inlayDoubleOffsetVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">8.0 mm</b>
+              <div id="inlayDoubleOffsetVRow" style="display:flex;align-items:center;gap:8px;margin-bottom:0">
+                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Offset vertical</span>
+                <div class="range-field" style="flex:1;margin:0"><input id="inlayDoubleOffsetV" type="range" min="0" max="50" step="0.5" value="8"></div>
+                <b id="inlayDoubleOffsetVVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">8.0 mm</b>
+              </div>
+              <div id="inlayDoubleOffsetHRow" style="display:flex;align-items:center;gap:8px;margin-bottom:0">
+                <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Offset horizontal</span>
+                <div class="range-field" style="flex:1;margin:0"><input id="inlayDoubleOffsetH" type="range" min="0" max="50" step="0.5" value="0"></div>
+                <b id="inlayDoubleOffsetHVal" style="font-size:.82rem;color:#0277bd;flex-shrink:0;min-width:48px;text-align:right">0.0 mm</b>
               </div>
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:0">
                 <span style="font-size:.82rem;color:#555;font-weight:500;flex-shrink:0;min-width:95px">Width ± (12/24)</span>
@@ -689,8 +700,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script th:src="@{/js/custom-path-editor.js(v=9)}"></script>
-<script th:src="@{/js/app.js(v=22)}"></script>
+<script th:src="@{/js/custom-path-editor.js(v=11)}"></script>
+<script th:src="@{/js/app.js(v=23)}"></script>
 
 </body>
 </html>

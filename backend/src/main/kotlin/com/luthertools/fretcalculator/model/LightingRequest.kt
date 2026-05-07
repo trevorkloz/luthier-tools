@@ -6,7 +6,7 @@ data class LightingRequest(
     val nutWidth: Double,
     val width12thFret: Double,
     val unit: Unit = Unit.MM,
-    val inlayDoubleOffset: Double = 8.0,
+    val inlayDoubleOffsetV: Double = 8.0,
     val channelWidth: Double = 1.2,
     val ledPocketSize: Double = 2.2,
     val trussRodWidth: Double = 6.0,
