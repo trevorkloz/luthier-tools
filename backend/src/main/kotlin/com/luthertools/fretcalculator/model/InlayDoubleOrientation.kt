@@ -7,10 +7,12 @@ enum class InlayDoubleOrientation(val value: String) {
     VERTICAL("vertical"),
     HORIZONTAL("horizontal");
 
-    @JsonValue fun toValue() = value
+    @JsonValue
+    fun toValue() = value
 
     companion object {
-        @JsonCreator @JvmStatic
+        @JsonCreator
+        @JvmStatic
         fun fromValue(v: String) = entries.firstOrNull { it.value == v } ?: VERTICAL
     }
 }

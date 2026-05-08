@@ -7,10 +7,12 @@ enum class Unit(val label: String) {
     MM("mm"),
     INCH("inch");
 
-    @JsonValue override fun toString() = label
+    @JsonValue
+    override fun toString() = label
 
     companion object {
-        @JsonCreator @JvmStatic
+        @JsonCreator
+        @JvmStatic
         fun fromValue(v: String) = entries.first { it.label == v }
     }
 }

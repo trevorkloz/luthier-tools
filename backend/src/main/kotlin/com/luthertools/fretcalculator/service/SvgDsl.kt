@@ -34,8 +34,8 @@ internal fun pathStr(
 // internal — InlayPreset.Circle uses this to build the path d for its cutPath callback
 internal fun circlePathD(cx: Double, cy: Double, r: Double): String =
     "M ${(cx - r).f4()} ${cy.f4()} " +
-    "A ${r.f4()} ${r.f4()} 0 1 0 ${(cx + r).f4()} ${cy.f4()} " +
-    "A ${r.f4()} ${r.f4()} 0 1 0 ${(cx - r).f4()} ${cy.f4()} Z"
+            "A ${r.f4()} ${r.f4()} 0 1 0 ${(cx + r).f4()} ${cy.f4()} " +
+            "A ${r.f4()} ${r.f4()} 0 1 0 ${(cx - r).f4()} ${cy.f4()} Z"
 
 // ── Geometry scope — inside a shaper cut block, returns the path 'd' ─────────
 
@@ -66,13 +66,15 @@ class ShaperScope internal constructor(
         toolDia: String = defaultToolDia,
         block: CutScope.() -> String,
     ) {
-        out.appendLine(pocketPathStr(
-            id = id,
-            d = CutScope().block(),
-            cutOffset = cutOffset,
-            toolDia = toolDia,
-            fillColor = COLOR_CUT_POCKET,
-        ))
+        out.appendLine(
+            pocketPathStr(
+                id = id,
+                d = CutScope().block(),
+                cutOffset = cutOffset,
+                toolDia = toolDia,
+                fillColor = COLOR_CUT_POCKET,
+            )
+        )
     }
 
     fun online(
@@ -81,14 +83,16 @@ class ShaperScope internal constructor(
         toolDia: String = defaultToolDia,
         block: CutScope.() -> String,
     ) {
-        out.appendLine(pathStr(
-            id = id,
-            d = CutScope().block(),
-            cutOffset = cutOffset,
-            toolDia = toolDia,
-            cutType = "online",
-            strokeColor = COLOR_CUT_ONLINE,
-        ))
+        out.appendLine(
+            pathStr(
+                id = id,
+                d = CutScope().block(),
+                cutOffset = cutOffset,
+                toolDia = toolDia,
+                cutType = "online",
+                strokeColor = COLOR_CUT_ONLINE,
+            )
+        )
     }
 
     fun inside(
@@ -97,14 +101,16 @@ class ShaperScope internal constructor(
         toolDia: String = defaultToolDia,
         block: CutScope.() -> String,
     ) {
-        out.appendLine(pathStr(
-            id = id,
-            d = CutScope().block(),
-            cutOffset = cutOffset,
-            toolDia = toolDia,
-            cutType = "inside",
-            strokeColor = COLOR_CUT_INSIDE,
-        ))
+        out.appendLine(
+            pathStr(
+                id = id,
+                d = CutScope().block(),
+                cutOffset = cutOffset,
+                toolDia = toolDia,
+                cutType = "inside",
+                strokeColor = COLOR_CUT_INSIDE,
+            )
+        )
     }
 
     fun outside(
@@ -113,14 +119,16 @@ class ShaperScope internal constructor(
         toolDia: String = defaultToolDia,
         block: CutScope.() -> String,
     ) {
-        out.appendLine(pathStr(
-            id = id,
-            d = CutScope().block(),
-            cutOffset = cutOffset,
-            toolDia = toolDia,
-            cutType = "outside",
-            strokeColor = COLOR_CUT_OUTSIDE,
-        ))
+        out.appendLine(
+            pathStr(
+                id = id,
+                d = CutScope().block(),
+                cutOffset = cutOffset,
+                toolDia = toolDia,
+                cutType = "outside",
+                strokeColor = COLOR_CUT_OUTSIDE,
+            )
+        )
     }
 }
 
@@ -140,7 +148,9 @@ class SvgScope internal constructor(private val out: StringBuilder) {
     }
 
     // Escape hatch for pre-built SVG element strings (e.g. inlay preset output)
-    internal fun raw(s: String) { out.appendLine(s) }
+    internal fun raw(s: String) {
+        out.appendLine(s)
+    }
 
     fun group(id: String, block: SvgScope.() -> Unit) {
         out.appendLine("""  <g id="$id">""")
@@ -169,10 +179,10 @@ class LayerScope internal constructor(private val out: StringBuilder) {
 
     fun line(
         x1: Double, y1: Double, x2: Double, y2: Double,
-        stroke: String, width: Double, dash: String = "",
+        stroke: String, width: Double, dash: String = "", opacity: Double = 1.0
     ) {
         val dashAttr = if (dash.isNotEmpty()) """ stroke-dasharray="$dash"""" else ""
-        out.appendLine("""    <line x1="${x1.f4()}" y1="${y1.f4()}" x2="${x2.f4()}" y2="${y2.f4()}" stroke="$stroke" stroke-width="$width"$dashAttr/>""")
+        out.appendLine("""    <line x1="${x1.f4()}" y1="${y1.f4()}" x2="${x2.f4()}" y2="${y2.f4()}" stroke="$stroke" stroke-opacity="$opacity" stroke-width="$width"$dashAttr/>""")
     }
 
     fun rect(
@@ -181,7 +191,7 @@ class LayerScope internal constructor(private val out: StringBuilder) {
         stroke: String, strokeWidth: Double, dash: String = "",
     ) {
         val opacityAttr = if (fillOpacity != null) """ fill-opacity="$fillOpacity"""" else ""
-        val dashAttr    = if (dash.isNotEmpty())   """ stroke-dasharray="$dash""""    else ""
+        val dashAttr = if (dash.isNotEmpty()) """ stroke-dasharray="$dash"""" else ""
         out.appendLine("""    <rect x="${x.f4()}" y="${y.f4()}" width="${w.f4()}" height="${h.f4()}" fill="$fill"$opacityAttr stroke="$stroke" stroke-width="$strokeWidth"$dashAttr/>""")
     }
 
@@ -203,10 +213,10 @@ fun buildSvg(width: Double, height: Double, comment: String, block: SvgScope.() 
         appendLine("<!-- $comment -->")
         appendLine(
             """<svg xmlns="http://www.w3.org/2000/svg" """ +
-            """xmlns:shaper="http://www.shapertools.com/namespaces/shaper" """ +
-            """xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" """ +
-            """width="${width.f4()}mm" height="${height.f4()}mm" """ +
-            """viewBox="0 0 ${width.f4()} ${height.f4()}">"""
+                    """xmlns:shaper="http://www.shapertools.com/namespaces/shaper" """ +
+                    """xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" """ +
+                    """width="${width.f4()}mm" height="${height.f4()}mm" """ +
+                    """viewBox="0 0 ${width.f4()} ${height.f4()}">"""
         )
         SvgScope(this).block()
         append("</svg>")

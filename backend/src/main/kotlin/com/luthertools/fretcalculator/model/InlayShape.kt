@@ -10,10 +10,12 @@ enum class InlayShape(val id: String) {
     DIAMOND("diamond"),
     CUSTOM("custom");
 
-    @JsonValue fun toValue() = id
+    @JsonValue
+    fun toValue() = id
 
     companion object {
-        @JsonCreator @JvmStatic
+        @JsonCreator
+        @JvmStatic
         fun fromValue(v: String) = entries.first { it.id == v }
     }
 }

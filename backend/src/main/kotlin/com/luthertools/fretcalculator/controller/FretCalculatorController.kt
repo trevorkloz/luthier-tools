@@ -32,7 +32,13 @@ class FretCalculatorController(
 
     @GetMapping("/presets/strings")
     fun presetsStrings(): ResponseEntity<List<Map<String, Any>>> =
-        ResponseEntity.ok(StringPreset.entries.map { mapOf("id" to it.name, "label" to it.label, "numStrings" to it.gaugesIn.size) })
+        ResponseEntity.ok(StringPreset.entries.map {
+            mapOf(
+                "id" to it.name,
+                "label" to it.label,
+                "numStrings" to it.gaugesIn.size
+            )
+        })
 
     @GetMapping("/presets/radius")
     fun presetsRadius(): ResponseEntity<List<RadiusPreset>> =
@@ -46,24 +52,26 @@ class FretCalculatorController(
         return ResponseEntity.ok(
             FretResponse(
                 fretPositions = positions,
-                svgContent    = svg,
-                unit          = request.unit,
-                scaleLength   = request.scaleLength,
+                svgContent = svg,
+                unit = request.unit,
+                scaleLength = request.scaleLength,
             )
         )
     }
 
     @PostMapping("/generate/frets-only", produces = ["image/svg+xml"])
     fun generateFretsOnly(@RequestBody request: FretRequest): ResponseEntity<String> {
-        val (_, svg) = generateFretboardSvg(request.copy(
-            showInlays           = false,
-            showBoundingBox      = true,
-            showFretNumbers      = false,
-            showCenterLine       = true,
-            showWidthAnnotations = false,
-            showRadius           = false,
-            stringPreset         = StringPreset.NONE,
-        ))
+        val (_, svg) = generateFretboardSvg(
+            request.copy(
+                showInlays = false,
+                showBoundingBox = true,
+                showFretNumbers = false,
+                showCenterLine = true,
+                showWidthAnnotations = false,
+                showRadius = false,
+                stringPreset = StringPreset.NONE,
+            )
+        )
         val filename = "fretboard-${request.scaleLength}${request.unit}-${request.numberOfFrets}frets.svg"
         return ResponseEntity.ok()
             .header("Content-Disposition", "attachment; filename=\"$filename\"")
@@ -74,10 +82,13 @@ class FretCalculatorController(
     @PostMapping("/generate/inlays-only", produces = ["image/svg+xml"])
     fun generateInlaysOnly(@RequestBody request: FretRequest): ResponseEntity<String> {
         val positions = fretCalculatorService.calculateFretPositions(request)
-        val svg       = svgGeneratorService.generateInlaysSheet(request, positions)
-        val preset    = SvgGeneratorService.INLAY_PRESETS.find { it.id == request.inlayShape }?.name ?: "inlays"
+        val svg = svgGeneratorService.generateInlaysSheet(request, positions)
+        val preset = SvgGeneratorService.INLAY_PRESETS.find { it.id == request.inlayShape }?.name ?: "inlays"
         return ResponseEntity.ok()
-            .header("Content-Disposition", "attachment; filename=\"inlays-sheet-${request.scaleLength}${request.unit}-${preset}.svg\"")
+            .header(
+                "Content-Disposition",
+                "attachment; filename=\"inlays-sheet-${request.scaleLength}${request.unit}-${preset}.svg\""
+            )
             .contentType(MediaType.parseMediaType("image/svg+xml"))
             .body(svg)
     }

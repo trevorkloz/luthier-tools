@@ -607,6 +607,8 @@ function updateSvgRuler() {
 
   // px per mm in container space: SVG renders at 100% of container width, then CSS scale(svgZoom) applied
   const pxPerMm = cw * svgZoom / svgPhysicalW;
+  const calibration = 0.9885; // tweak this
+  const pxPerMmCorrected = pxPerMm * calibration;
 
   // mm value at left and right edge of the ruler (accounting for pan)
   const mmLeft  = -svgPanX / pxPerMm;
@@ -614,15 +616,15 @@ function updateSvgRuler() {
   const mmSpan  = mmRight - mmLeft;
 
   // Pick the largest nice major interval giving at least 8 major ticks
-  const niceIntervals = [0.5, 1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000];
+  const niceIntervals = [1, 10, 50, 100];
   let interval = niceIntervals[niceIntervals.length - 1];
   for (let j = niceIntervals.length - 1; j >= 0; j--) {
     if (mmSpan / niceIntervals[j] >= 8) { interval = niceIntervals[j]; break; }
   }
 
   // Number of minor subdivisions per major interval (5 gives 4 minor ticks between majors)
-  const minorDiv = (interval % 5 === 0 || interval >= 10) ? 5 : (interval === 2 ? 4 : 2);
-  const minorStep = interval / minorDiv;
+  const minorDiv = 10;
+  const minorStep = Math.max(interval / minorDiv, 1);
 
   const firstTick = Math.floor(mmLeft / minorStep) * minorStep;
 
@@ -634,11 +636,26 @@ function updateSvgRuler() {
   ctx.textAlign   = 'center';
 
   for (let mm = firstTick; mm <= mmRight + minorStep; mm = parseFloat((mm + minorStep).toPrecision(10))) {
-    const x = Math.round(svgPanX + mm * pxPerMm) + 0.5;
+    const rulerOffsetMm = 10.45;
+    const x = Math.round(svgPanX + (mm+rulerOffsetMm) * pxPerMmCorrected) + 0.5;
     if (x < -2 || x > cw + 2) continue;
 
     const isMajor = Math.abs(Math.round(mm / interval) * interval - mm) < minorStep * 0.01;
-    const tickH = isMajor ? 13 : 7;
+    const isMedium =
+        Math.abs(Math.round(mm / 5) * 5 - mm) < minorStep * 0.01;
+
+    const tickH =
+        isMajor ? 13 :
+            isMedium ? 10 :
+                7;
+
+    const isNegative = mm < 0;
+
+    ctx.strokeStyle = isNegative ? '#cfcfcf' : '#90a4ae';
+    ctx.fillStyle   = isNegative ? '#cfcfcf' : '#546e7a';
+
+    const is100mm = Math.abs(mm % 100) < minorStep * 0.01;
+    ctx.font = is100mm ? 'bold 9px system-ui,sans-serif' : '9px system-ui,sans-serif';
 
     ctx.beginPath();
     ctx.moveTo(x, 1);
@@ -651,12 +668,6 @@ function updateSvgRuler() {
       ctx.fillText(label, x, lh);
     }
   }
-
-  // Total figure width label pinned to top-right
-  ctx.textAlign   = 'right';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle   = '#aaaaaa';
-  ctx.fillText(`${svgPhysicalW.toFixed(1)} mm`, cw - 3, 2);
 }
 
 // ── Rendering ─────────────────────────────────────────────────

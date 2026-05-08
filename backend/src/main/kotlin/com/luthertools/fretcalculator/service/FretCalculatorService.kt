@@ -43,7 +43,7 @@ class FretCalculatorService {
         val sl = request.scaleLength       // center scale (used for fret table distances)
         val slT = request.trebleScaleLength
         val slB = request.bassScaleLength
-        val P   = request.perpendicularFret
+        val P = request.perpendicularFret
 
         // Factor shared by all per-string calculations: fret-n offset from x_perp = S * (2^(-P/12) - 2^(-n/12))
         fun xOffset(scaleLen: Double, fretN: Int): Double =
@@ -73,7 +73,7 @@ class FretCalculatorService {
                     distanceFromNut = distCenter.round4(),
                     distanceFromPreviousFret = distFromPrev.round4(),
                     xOffsetTreble = offT.round4(),
-                    xOffsetBass   = offB.round4(),
+                    xOffsetBass = offB.round4(),
                 )
             )
             previousCenter = distCenter

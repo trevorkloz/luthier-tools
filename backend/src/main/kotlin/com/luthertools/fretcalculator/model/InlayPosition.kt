@@ -8,10 +8,12 @@ enum class InlayPosition(val value: String) {
     TOP("top"),
     BOTTOM("bottom");
 
-    @JsonValue fun toValue() = value
+    @JsonValue
+    fun toValue() = value
 
     companion object {
-        @JsonCreator @JvmStatic
+        @JsonCreator
+        @JvmStatic
         fun fromValue(v: String) = entries.first { it.value == v }
     }
 }

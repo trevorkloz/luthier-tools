@@ -28,19 +28,20 @@ sealed class InlayPreset(
                 else -> ctx.centerY
             }
             return if (ctx.isDouble) {
-                val hoH  = ctx.effectiveInlayDoubleOffsetH / 2.0
+                val hoH = ctx.effectiveInlayDoubleOffsetH / 2.0
                 val effV = ctx.effectiveInlayDoubleOffsetV
-                val hoV  = effV / 2.0
+                val hoV = effV / 2.0
                 when (ctx.doubleOrientation) {
                     InlayDoubleOrientation.HORIZONTAL -> listOf(
                         circle("${ctx.baseId}a", ctx.cx - hoH, y - hoV),
                         circle("${ctx.baseId}b", ctx.cx + hoH, y + hoV),
                     )
+
                     else -> { // VERTICAL
                         val (y1, y2) = when (ctx.position) {
-                            InlayPosition.TOP    -> Pair(y,        y + effV)
+                            InlayPosition.TOP -> Pair(y, y + effV)
                             InlayPosition.BOTTOM -> Pair(y - effV, y)
-                            else                 -> Pair(ctx.centerY - hoV, ctx.centerY + hoV)
+                            else -> Pair(ctx.centerY - hoV, ctx.centerY + hoV)
                         }
                         listOf(
                             circle("${ctx.baseId}a", ctx.cx - hoH, y1),
@@ -56,11 +57,11 @@ sealed class InlayPreset(
 
     data object Rectangle : InlayPreset(InlayShape.RECTANGLE, "Rectangle") {
         override fun draw(ctx: InlayShapeCtx): List<String> {
-            val hw  = ctx.effectiveSize / 2.0
-            val h   = ctx.effectiveHeight
-            val tr  = ctx.trap
+            val hw = ctx.effectiveSize / 2.0
+            val h = ctx.effectiveHeight
+            val tr = ctx.trap
             // Split the lean equally across both edges so the centroid stays at cx.
-            val hs  = ctx.parallelogram * h / 2.0
+            val hs = ctx.parallelogram * h / 2.0
             fun rect(id: String, cx: Double, d: Double, dy: Double = 0.0): String {
                 val dL = d - hw
                 val dR = d + hw
@@ -71,49 +72,55 @@ sealed class InlayPreset(
                     InlayPosition.TOP -> {
                         val hL = (h * (1.0 - tr * 0.5)).coerceAtLeast(0.01)
                         val hR = h * (1.0 + tr * 0.5)
-                        ctx.cutPath(id,
+                        ctx.cutPath(
+                            id,
                             "M ${ctx.f(xL + hs)} ${ctx.f(ctx.yTop(dL) + em + dy)} " +
-                            "L ${ctx.f(xR + hs)} ${ctx.f(ctx.yTop(dR) + em + dy)} " +
-                            "L ${ctx.f(xR - hs)} ${ctx.f(ctx.yTop(dR) + hR + em + dy)} " +
-                            "L ${ctx.f(xL - hs)} ${ctx.f(ctx.yTop(dL) + hL + em + dy)} Z"
+                                    "L ${ctx.f(xR + hs)} ${ctx.f(ctx.yTop(dR) + em + dy)} " +
+                                    "L ${ctx.f(xR - hs)} ${ctx.f(ctx.yTop(dR) + hR + em + dy)} " +
+                                    "L ${ctx.f(xL - hs)} ${ctx.f(ctx.yTop(dL) + hL + em + dy)} Z"
                         )
                     }
+
                     InlayPosition.BOTTOM -> {
                         val hL = (h * (1.0 - tr * 0.5)).coerceAtLeast(0.01)
                         val hR = h * (1.0 + tr * 0.5)
-                        ctx.cutPath(id,
+                        ctx.cutPath(
+                            id,
                             "M ${ctx.f(xL + hs)} ${ctx.f(ctx.yBottom(dL) - hL - em + dy)} " +
-                            "L ${ctx.f(xR + hs)} ${ctx.f(ctx.yBottom(dR) - hR - em + dy)} " +
-                            "L ${ctx.f(xR - hs)} ${ctx.f(ctx.yBottom(dR) - em + dy)} " +
-                            "L ${ctx.f(xL - hs)} ${ctx.f(ctx.yBottom(dL) - em + dy)} Z"
+                                    "L ${ctx.f(xR + hs)} ${ctx.f(ctx.yBottom(dR) - hR - em + dy)} " +
+                                    "L ${ctx.f(xR - hs)} ${ctx.f(ctx.yBottom(dR) - em + dy)} " +
+                                    "L ${ctx.f(xL - hs)} ${ctx.f(ctx.yBottom(dL) - em + dy)} Z"
                         )
                     }
+
                     else -> {
                         val hhL = (h / 2.0 * (1.0 - tr * 0.5)).coerceAtLeast(0.01)
                         val hhR = h / 2.0 * (1.0 + tr * 0.5)
-                        ctx.cutPath(id,
+                        ctx.cutPath(
+                            id,
                             "M ${ctx.f(xL + hs)} ${ctx.f(ctx.centerY - hhL + dy)} " +
-                            "L ${ctx.f(xR + hs)} ${ctx.f(ctx.centerY - hhR + dy)} " +
-                            "L ${ctx.f(xR - hs)} ${ctx.f(ctx.centerY + hhR + dy)} " +
-                            "L ${ctx.f(xL - hs)} ${ctx.f(ctx.centerY + hhL + dy)} Z"
+                                    "L ${ctx.f(xR + hs)} ${ctx.f(ctx.centerY - hhR + dy)} " +
+                                    "L ${ctx.f(xR - hs)} ${ctx.f(ctx.centerY + hhR + dy)} " +
+                                    "L ${ctx.f(xL - hs)} ${ctx.f(ctx.centerY + hhL + dy)} Z"
                         )
                     }
                 }
             }
             return if (ctx.isDouble) {
-                val hoH  = ctx.effectiveInlayDoubleOffsetH / 2.0
+                val hoH = ctx.effectiveInlayDoubleOffsetH / 2.0
                 val effV = ctx.effectiveInlayDoubleOffsetV
-                val hoV  = effV / 2.0
+                val hoV = effV / 2.0
                 when (ctx.doubleOrientation) {
                     InlayDoubleOrientation.HORIZONTAL -> listOf(
                         rect("${ctx.baseId}a", ctx.cx - hoH, ctx.midDist - hoH, -hoV),
                         rect("${ctx.baseId}b", ctx.cx + hoH, ctx.midDist + hoH, +hoV),
                     )
+
                     else -> { // VERTICAL
                         val (dy1, dy2) = when (ctx.position) {
-                            InlayPosition.TOP    -> Pair(0.0,   effV)
+                            InlayPosition.TOP -> Pair(0.0, effV)
                             InlayPosition.BOTTOM -> Pair(-effV, 0.0)
-                            else                 -> Pair(-hoV,  +hoV)
+                            else -> Pair(-hoV, +hoV)
                         }
                         listOf(
                             rect("${ctx.baseId}a", ctx.cx - hoH, ctx.midDist, dy1),
@@ -160,16 +167,16 @@ sealed class InlayPreset(
                 fun yBaseAt(px: Double): Double {
                     val d = ctx.midDist + (px - 0.5) * w
                     return when (ctx.position) {
-                        InlayPosition.TOP    -> ctx.yTop(d)    + edgeMargin      + dyOff
-                        InlayPosition.BOTTOM -> ctx.yBottom(d) - h - edgeMargin  + dyOff
-                        else                 -> ctx.centerY    - h / 2.0         + dyOff
+                        InlayPosition.TOP -> ctx.yTop(d) + edgeMargin + dyOff
+                        InlayPosition.BOTTOM -> ctx.yBottom(d) - h - edgeMargin + dyOff
+                        else -> ctx.centerY - h / 2.0 + dyOff
                     }
                 }
 
                 fun tx(px: Double, py: Double): Pair<Double, Double> {
                     val trapScale = (1.0 + ctx.trap * (px - 0.5)).coerceAtLeast(0.01)
-                    val xLocal    = cx + (px - 0.5) * w
-                    val yLocal    = yBaseAt(px) + py * h * trapScale
+                    val xLocal = cx + (px - 0.5) * w
+                    val yLocal = yBaseAt(px) + py * h * trapScale
                     return Pair(xLocal + hs * (1.0 - 2.0 * py), yLocal)
                 }
 
@@ -185,19 +192,21 @@ sealed class InlayPreset(
                                 val (x, y) = tx(seg[0], seg[1])
                                 sb.append(" L ").append(ctx.f(x)).append(' ').append(ctx.f(y))
                             }
+
                             4 -> {
                                 val (qcx, qcy) = tx(seg[0], seg[1])
-                                val (qx, qy)   = tx(seg[2], seg[3])
+                                val (qx, qy) = tx(seg[2], seg[3])
                                 sb.append(" Q ").append(ctx.f(qcx)).append(' ').append(ctx.f(qcy))
-                                  .append(' ').append(ctx.f(qx)).append(' ').append(ctx.f(qy))
+                                    .append(' ').append(ctx.f(qx)).append(' ').append(ctx.f(qy))
                             }
+
                             6 -> {
                                 val (c1x, c1y) = tx(seg[0], seg[1])
                                 val (c2x, c2y) = tx(seg[2], seg[3])
                                 val (cx2, cy2) = tx(seg[4], seg[5])
                                 sb.append(" C ").append(ctx.f(c1x)).append(' ').append(ctx.f(c1y))
-                                  .append(' ').append(ctx.f(c2x)).append(' ').append(ctx.f(c2y))
-                                  .append(' ').append(ctx.f(cx2)).append(' ').append(ctx.f(cy2))
+                                    .append(' ').append(ctx.f(c2x)).append(' ').append(ctx.f(c2y))
+                                    .append(' ').append(ctx.f(cx2)).append(' ').append(ctx.f(cy2))
                             }
                         }
                     }
@@ -217,19 +226,20 @@ sealed class InlayPreset(
             }
 
             return if (ctx.isDouble) {
-                val hoH  = ctx.effectiveInlayDoubleOffsetH / 2.0
+                val hoH = ctx.effectiveInlayDoubleOffsetH / 2.0
                 val effV = ctx.effectiveInlayDoubleOffsetV
-                val hoV  = effV / 2.0
+                val hoV = effV / 2.0
                 when (ctx.doubleOrientation) {
                     InlayDoubleOrientation.HORIZONTAL -> listOf(
                         shape("${ctx.baseId}a", -hoH, -hoV),
                         shape("${ctx.baseId}b", +hoH, +hoV),
                     ).flatten()
+
                     else -> { // VERTICAL
                         val (dy1, dy2) = when (ctx.position) {
-                            InlayPosition.TOP    -> Pair(0.0,   effV)
+                            InlayPosition.TOP -> Pair(0.0, effV)
                             InlayPosition.BOTTOM -> Pair(-effV, 0.0)
-                            else                 -> Pair(-hoV,  +hoV)
+                            else -> Pair(-hoV, +hoV)
                         }
                         listOf(
                             shape("${ctx.baseId}a", -hoH, dy1),
@@ -261,19 +271,20 @@ sealed class InlayPreset(
             }
 
             return if (ctx.isDouble) {
-                val hoH  = ctx.effectiveInlayDoubleOffsetH / 2.0
+                val hoH = ctx.effectiveInlayDoubleOffsetH / 2.0
                 val effV = ctx.effectiveInlayDoubleOffsetV
-                val hoV  = effV / 2.0
+                val hoV = effV / 2.0
                 when (ctx.doubleOrientation) {
                     InlayDoubleOrientation.HORIZONTAL -> listOf(
                         diamond("${ctx.baseId}a", ctx.cx - hoH, y - hoV),
                         diamond("${ctx.baseId}b", ctx.cx + hoH, y + hoV),
                     )
+
                     else -> { // VERTICAL
                         val (y1, y2) = when (ctx.position) {
-                            InlayPosition.TOP    -> Pair(y,        y + effV)
+                            InlayPosition.TOP -> Pair(y, y + effV)
                             InlayPosition.BOTTOM -> Pair(y - effV, y)
-                            else                 -> Pair(ctx.centerY - hoV, ctx.centerY + hoV)
+                            else -> Pair(ctx.centerY - hoV, ctx.centerY + hoV)
                         }
                         listOf(
                             diamond("${ctx.baseId}a", ctx.cx - hoH, y1),

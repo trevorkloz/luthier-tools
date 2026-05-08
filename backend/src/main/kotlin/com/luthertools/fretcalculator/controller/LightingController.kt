@@ -31,11 +31,11 @@ class LightingController(
             }
         return ResponseEntity.ok(
             LightingResponse(
-                svgContent         = svg,
-                channelCount       = chCount,
+                svgContent = svg,
+                channelCount = chCount,
                 totalChannelLength = totalLen,
-                unit               = request.unit,
-                scaleLength        = request.scaleLength,
+                unit = request.unit,
+                scaleLength = request.scaleLength,
             )
         )
     }
