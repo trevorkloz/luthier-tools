@@ -103,8 +103,9 @@
 
     /* ── Preview card ────────────────────────────────────────── */
     .preview-card { margin-bottom: 16px; }
-    #svgContainer { overflow: hidden; }
-    #svgContainer svg { width: 100%; height: auto; display: block; }
+    #svgContainer { overflow: hidden; cursor: grab; user-select: none; touch-action: none; }
+    #svgContainer.panning { cursor: grabbing; }
+    #svgContainer svg { width: 100%; height: auto; display: block; transform-origin: 0 0; }
 
     /* ── Preview light/dark toggle buttons ───────────────────── */
     .preview-theme-btn {
@@ -226,6 +227,31 @@
               </div>
             </div>
 
+            <div class="divider" style="margin:4px 0 10px"></div>
+            <p style="margin-bottom:8px;font-weight:500;color:#0277bd;font-size:.82rem">Multiscale / Fan Frets</p>
+            <div class="switch" style="margin-bottom:8px">
+              <label><input type="checkbox" id="multiscale"><span class="lever"></span>Enable multiscale (fan frets)</label>
+            </div>
+            <div id="multiscaleEditor" style="display:none;padding-left:18px">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 8px">
+                <div class="input-field">
+                  <input id="bassScaleLength" type="number" value="686" min="100" max="2000" step="0.5" class="validate">
+                  <label for="bassScaleLength" class="active">Bass Scale</label>
+                </div>
+                <div class="input-field">
+                  <input id="trebleScaleLength" type="number" value="628" min="100" max="2000" step="0.5" class="validate">
+                  <label for="trebleScaleLength" class="active">Treble Scale</label>
+                </div>
+              </div>
+              <div class="input-field" style="max-width:140px">
+                <input id="perpendicularFret" type="number" value="7" min="0" max="36" step="1" class="validate">
+                <label for="perpendicularFret" class="active">Perpendicular Fret</label>
+              </div>
+              <p style="font-size:.73rem;color:#888;margin-top:0;line-height:1.4;padding-left:2px">
+                The one fret that sits perpendicular to the strings. Nut and bridge angles are shown in the guide layer.
+              </p>
+            </div>
+
             <p style="margin-bottom:8px;font-weight:500;color:#0277bd;font-size:.82rem">SVG Options</p>
             <div class="switch" style="margin-bottom:8px">
               <label><input type="checkbox" id="showFretNumbers" checked><span class="lever"></span>Fret numbers</label>
@@ -239,6 +265,14 @@
             <div class="switch" style="margin-bottom:10px">
               <label><input type="checkbox" id="showBoundingBox"><span class="lever"></span>Fretboard blank bounding box</label>
             </div>
+
+            <div class="divider" style="margin:4px 0 10px"></div>
+            <p style="margin-bottom:8px;font-weight:500;color:#0277bd;font-size:.82rem">String Visualization</p>
+            <div class="input-field" style="max-width:200px">
+              <select id="stringPreset"><!-- populated by JS from /api/frets/string-presets --></select>
+              <label>Strings</label>
+            </div>
+            <input type="hidden" id="bridgeStyle" value="NONE">
 
             <div class="divider" style="margin:4px 0 10px"></div>
             <p style="margin-bottom:8px;font-weight:500;color:#0277bd;font-size:.82rem">Alignment Pinholes</p>
@@ -495,16 +529,7 @@
           <div class="collapsible-body">
 
             <div class="input-field">
-              <select id="radiusPreset">
-                <option value="">— Custom —</option>
-                <option value="0">Flat (no radius)</option>
-                <option value="184">7.25″ (Vintage Fender)</option>
-                <option value="241">9.5″ (Modern Fender)</option>
-                <option value="254">10″ (PRS-style)</option>
-                <option value="305">12″ (Gibson-style)</option>
-                <option value="356">14″</option>
-                <option value="406">16″ (Ibanez / Warmoth)</option>
-              </select>
+              <select id="radiusPreset"><!-- populated by JS from /api/frets/radius-presets --></select>
               <label>Common Radii</label>
             </div>
             <div class="input-field">
@@ -654,7 +679,17 @@
           <i class="material-icons tiny" style="color:#0277bd">straighten</i>
           <span style="font-weight:500;font-size:1rem">Live Preview</span>
           <span id="previewSubtitle" style="font-size:.78rem;color:#9e9e9e;margin-left:4px"></span>
-          <div style="margin-left:auto;display:flex;gap:3px">
+          <div style="margin-left:auto;display:flex;gap:3px;align-items:center">
+            <button onclick="zoomSvgBy(1.25)" type="button" class="preview-theme-btn" title="Zoom in (scroll wheel also works)">
+              <i class="material-icons" style="font-size:14px;line-height:1">zoom_in</i>
+            </button>
+            <button onclick="zoomSvgBy(0.8)" type="button" class="preview-theme-btn" title="Zoom out">
+              <i class="material-icons" style="font-size:14px;line-height:1">zoom_out</i>
+            </button>
+            <button onclick="resetSvgZoom()" type="button" class="preview-theme-btn" title="Reset zoom &amp; pan">
+              <i class="material-icons" style="font-size:14px;line-height:1">fit_screen</i>
+            </button>
+            <div style="width:1px;height:18px;background:#e0e0e0;margin:0 2px"></div>
             <button id="previewLightBtn" onclick="setPreviewDarkMode(false)" type="button"
                     class="preview-theme-btn preview-mode-active" title="Light background">
               <i class="material-icons" style="font-size:14px;line-height:1">wb_sunny</i>Light
@@ -670,6 +705,7 @@
           <div class="indeterminate light-blue darken-1"></div>
         </div>
         <div id="svgContainer" style="display:none"></div>
+        <canvas id="svgRuler" style="display:none;height:22px;image-rendering:crisp-edges"></canvas>
         <div id="emptyState" style="text-align:center;padding:32px 0">
           <i class="material-icons" style="font-size:56px;color:#b3e5fc">straighten</i>
           <p style="color:#81d4fa">Fill in the parameters to generate your fretboard</p>
@@ -701,7 +737,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script th:src="@{/js/custom-path-editor.js(v=11)}"></script>
-<script th:src="@{/js/app.js(v=23)}"></script>
+<script th:src="@{/js/app.js(v=31)}"></script>
 
 </body>
 </html>

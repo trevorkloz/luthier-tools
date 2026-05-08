@@ -43,4 +43,12 @@ data class FretRequest(
     // Whether the custom shape is rendered as a closed filled area (true → "inside"
     // pocket cut) or as an open line (false → "online" stroke cut).
     val inlayCustomClosed: Boolean = true,
+    // Multiscale (fan fret) settings
+    val multiscale: Boolean = false,
+    val trebleScaleLength: Double = 628.0,
+    val bassScaleLength: Double = 686.0,
+    val perpendicularFret: Int = 7,
+    // String visualization guide lines
+    val stringPreset: StringPreset = StringPreset.NONE,
+    val bridgeStyle: BridgeStyle = BridgeStyle.NONE,
 )

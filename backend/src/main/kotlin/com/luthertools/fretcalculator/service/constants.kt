@@ -56,6 +56,21 @@ const val COLOR_LIGHT_TRUSS_STROKE = "#f9a825"
 const val COLOR_LIGHT_TRUSS_TEXT   = "#f57f17"
 const val COLOR_LIGHT_ACCENT       = "#e65100" // LED count and emphasis
 
+const val COLOR_PERP_FRET = "#e65100"          // perpendicular fret highlight in multiscale
+
+const val COLOR_STRING          = "#8d8d8d" // string guide lines
+const val STROKE_STRING_MIN     = 0.42      // stroke at STRING_GAUGE_REF_MIN
+const val STROKE_STRING_MAX     = 0.82      // stroke at STRING_GAUGE_REF_MAX
+const val STRING_GAUGE_REF_MIN  = 0.007     // thinnest practical string (in.) — sets the scale floor
+const val STRING_GAUGE_REF_MAX  = 0.130     // thickest practical string (in.) — sets the scale ceiling
+
+
+const val COLOR_BRIDGE      = "#795548"  // bridge outline (brown)
+const val COLOR_BRIDGE_FILL = "#d7ccc8"  // bridge body fill (light brown)
+const val STROKE_BRIDGE     = 0.25
+
+const val SVG_MARGIN_RIGHT_BRIDGE = 18.0  // for CLASSICAL bridge body depth
+
 const val STROKE_DIM        = 0.15      // dimension witness ticks, pinhole guide circles
 const val STROKE_DIM_LEADER = 0.10      // dashed leader lines
 const val STROKE_GUIDE      = 0.20      // center line, pinhole lines, guide elements

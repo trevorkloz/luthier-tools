@@ -1,6 +1,6 @@
 'use strict';
 
-const API_URL     = '/api/frets/calculate';
+const API_URL     = '/api/fretboard/generate';
 const STORAGE_KEY = 'fretCalcParams';
 const MM_PER_IN   = 25.4;
 
@@ -17,22 +17,23 @@ const DIM_FIELDS = [
 ];
 // inlaySize, inlayHeight, inlayDoubleOffsetV, inlayDoubleOffsetH are mm-fixed range sliders — not in DIM_FIELDS.
 
-const PRESETS = [
-  { name: 'Classical Guitar (650 mm)',       scaleLength: 650, nutWidth: 52, width12thFret: 60, numberOfFrets: 19, radius: 0   },
-  { name: 'Electric Guitar 25.5" (648 mm)',  scaleLength: 648, nutWidth: 42, width12thFret: 52, numberOfFrets: 22, radius: 184 },
-  { name: 'Electric Guitar 24.75" (628 mm)', scaleLength: 628, nutWidth: 42, width12thFret: 52, numberOfFrets: 22, radius: 305 },
-  { name: 'Electric Guitar 25" (635 mm)',    scaleLength: 635, nutWidth: 42, width12thFret: 52, numberOfFrets: 22, radius: 254 },
-  { name: 'Bass Guitar 34" (864 mm)',        scaleLength: 864, nutWidth: 42, width12thFret: 55, numberOfFrets: 20, radius: 305 },
-  { name: 'Bass Guitar 30" (762 mm)',        scaleLength: 762, nutWidth: 40, width12thFret: 53, numberOfFrets: 20, radius: 254 },
-  { name: 'Ukulele Soprano (345 mm)',        scaleLength: 345, nutWidth: 35, width12thFret: 42, numberOfFrets: 14, radius: 0   },
-  { name: 'Mandolin (350 mm)',               scaleLength: 350, nutWidth: 34, width12thFret: 40, numberOfFrets: 17, radius: 0   },
-  { name: 'Violin (330 mm)',                 scaleLength: 330, nutWidth: 24, width12thFret: 30, numberOfFrets: 0,  radius: 0   },
-];
+let instrumentPresets = [];
 
 let lastResponse = null;
 let debounceTimer = null;
 let prevUnit = 'mm';
 let previewDarkMode = false;
+
+// ── SVG preview zoom / pan ────────────────────────────────────
+let svgZoom = 1.0;
+let svgPanX = 0;
+let svgPanY = 0;
+let svgPhysicalW = 0; // physical width of current SVG in mm
+let _svgDragging = false;
+let _svgDragOriginX = 0;
+let _svgDragOriginY = 0;
+let _svgDragPanX = 0;
+let _svgDragPanY = 0;
 
 let currentInlayPresetId = 'circle';
 let inlayPresets         = [];
@@ -63,8 +64,7 @@ function publishLightingSync() {
 
 // ── Initialisation ────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadInlayPresets();
-  populatePresets();
+  await Promise.all([loadInlayPresets(), loadInstrumentPresets(), loadStringPresets(), loadRadiusPresets()]);
   M.Sidenav.init(document.querySelectorAll('.sidenav'));
   M.Collapsible.init(document.getElementById('inputSections'), {
     accordion: true,
@@ -103,6 +103,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('unit').addEventListener('change', onUnitSwitch);
   document.getElementById('preset').addEventListener('change', applyPreset);
+  document.getElementById('stringPreset').addEventListener('change', scheduleCalculate);
 
   ['showFretNumbers','showCenterLine','showWidthAnnotations',
    'showInlays','doubleInlays','showBoundingBox','showRadius',
@@ -132,6 +133,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('inlayDoubleOrientation').addEventListener('change', scheduleCalculate);
   document.getElementById('doubleInlays').addEventListener('change', updateDoubleMarkerControls);
   updateInlayEdgeMarginVisibility();
+
+  document.getElementById('multiscale').addEventListener('change', function () {
+    document.getElementById('multiscaleEditor').style.display = this.checked ? '' : 'none';
+    scheduleCalculate();
+  });
   updateDoubleMarkerControls();
 
   const cpCanvas = document.getElementById('customPathCanvas');
@@ -165,24 +171,83 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   customPathRedraw();
 
+  // SVG preview zoom / pan
+  const svgCont = document.getElementById('svgContainer');
+  svgCont.addEventListener('wheel',     _onSvgWheel,     { passive: false });
+  svgCont.addEventListener('mousedown', _onSvgMouseDown);
+  document.addEventListener('mousemove', _onSvgMouseMove);
+  document.addEventListener('mouseup',   _onSvgMouseUp);
+
   saveState();
   calculate();
 });
 
-// ── Presets ───────────────────────────────────────────────────
-function populatePresets() {
+// ── String presets ────────────────────────────────────────────
+async function loadStringPresets() {
+  let presets = [];
+  try {
+    const res = await fetch('/api/fretboard/presets/strings');
+    if (!res.ok) throw new Error();
+    presets = await res.json();
+  } catch (_) {
+    presets = [{ id: 'NONE', label: 'No strings' }];
+  }
+  const sel = document.getElementById('stringPreset');
+  presets.forEach((p, i) => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.label;
+    if (i === 0) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  M.FormSelect.init(sel);
+}
+
+// ── Radius presets ────────────────────────────────────────────
+async function loadRadiusPresets() {
+  let presets = [];
+  try {
+    const res = await fetch('/api/fretboard/presets/radius');
+    if (!res.ok) throw new Error();
+    presets = await res.json();
+  } catch (_) {
+    presets = [];
+  }
+  const sel = document.getElementById('radiusPreset');
+  const custom = document.createElement('option');
+  custom.value = ''; custom.textContent = '— Custom —';
+  sel.appendChild(custom);
+  presets.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = String(p.mm);
+    opt.textContent = p.label;
+    sel.appendChild(opt);
+  });
+  M.FormSelect.init(sel);
+}
+
+// ── Instrument presets ────────────────────────────────────────
+async function loadInstrumentPresets() {
+  try {
+    const res = await fetch('/api/fretboard/presets/instruments');
+    if (!res.ok) throw new Error();
+    instrumentPresets = await res.json();
+  } catch (_) {
+    instrumentPresets = [];
+  }
   const sel = document.getElementById('preset');
-  PRESETS.forEach((p, i) => {
+  instrumentPresets.forEach((p, i) => {
     const opt = document.createElement('option');
     opt.value = String(i);
     opt.textContent = p.name;
     sel.appendChild(opt);
   });
+  M.FormSelect.init(sel);
 }
 
 async function loadInlayPresets() {
   try {
-    const res = await fetch('/api/frets/inlay-presets');
+    const res = await fetch('/api/fretboard/presets/inlays');
     if (!res.ok) throw new Error();
     inlayPresets = await res.json();
   } catch (_) {
@@ -200,20 +265,26 @@ async function loadInlayPresets() {
 
 function applyPreset() {
   const idx = parseInt(document.getElementById('preset').value, 10);
-  if (isNaN(idx)) return;
-  const p = PRESETS[idx];
+  if (isNaN(idx) || idx >= instrumentPresets.length) return;
+  const p = instrumentPresets[idx];
   const unit = document.getElementById('unit').value;
   const fromMm = v => unit === 'inch' ? (v / MM_PER_IN).toFixed(4) : v;
   document.getElementById('scaleLength').value   = fromMm(p.scaleLength);
   document.getElementById('numberOfFrets').value = p.numberOfFrets;
   document.getElementById('nutWidth').value       = fromMm(p.nutWidth);
   document.getElementById('width12thFret').value  = fromMm(p.width12thFret);
-  if (p.radius !== undefined) {
-    document.getElementById('radiusValue').value = fromMm(p.radius);
+  if (p.radiusValue !== undefined) {
+    document.getElementById('radiusValue').value = fromMm(p.radiusValue);
     const rpEl = document.getElementById('radiusPreset');
-    rpEl.value = String(p.radius);
+    rpEl.value = String(p.radiusValue);
     M.FormSelect.init(rpEl);
   }
+  if (p.stringPreset) {
+    document.getElementById('stringPreset').value = p.stringPreset;
+    M.FormSelect.init(document.getElementById('stringPreset'));
+  }
+  const bsEl = document.getElementById('bridgeStyle');
+  if (bsEl) bsEl.value = p.bridgeStyle || 'NONE';
   M.updateTextFields();
   calculate();
 }
@@ -404,7 +475,7 @@ function buildRequest() {
     showInlays:           document.getElementById('showInlays').checked,
     doubleInlays:         document.getElementById('doubleInlays').checked,
     showBoundingBox:      document.getElementById('showBoundingBox').checked,
-    label:                isNaN(presetIdx) ? '' : PRESETS[presetIdx].name,
+    label:                isNaN(presetIdx) ? '' : (instrumentPresets[presetIdx]?.name ?? ''),
     showRadius:           document.getElementById('showRadius').checked,
     radiusValue:          toMm(parseFloat(document.getElementById('radiusValue').value)),
     radiusSteps:          parseInt(document.getElementById('radiusSteps').value, 10),
@@ -430,6 +501,12 @@ function buildRequest() {
     inlayParallelogram:   parseFloat(document.getElementById('inlayParallelogram').value) / 50,
     inlayCustomPath:      currentInlayPresetId === 'custom' ? customPathPoints : [],
     inlayCustomClosed:    customPathClosed,
+    multiscale:           document.getElementById('multiscale').checked,
+    bassScaleLength:      toMm(parseFloat(document.getElementById('bassScaleLength').value)),
+    trebleScaleLength:    toMm(parseFloat(document.getElementById('trebleScaleLength').value)),
+    perpendicularFret:    parseInt(document.getElementById('perpendicularFret').value, 10),
+    stringPreset:         document.getElementById('stringPreset').value,
+    bridgeStyle:          document.getElementById('bridgeStyle')?.value || 'NONE',
   };
 }
 
@@ -438,6 +515,148 @@ function isValid(req) {
          !isNaN(req.numberOfFrets) && req.numberOfFrets >= 0 && req.numberOfFrets <= 36 &&
          !isNaN(req.nutWidth) && req.nutWidth >= 10 &&
          !isNaN(req.width12thFret) && req.width12thFret >= 10;
+}
+
+// ── SVG preview zoom / pan helpers ───────────────────────────
+function _svgApplyTransform() {
+  const svg = document.querySelector('#svgContainer svg');
+  if (!svg) return;
+  svg.style.transform = `translate(${svgPanX}px,${svgPanY}px) scale(${svgZoom})`;
+  updateSvgRuler();
+}
+
+function resetSvgZoom() {
+  svgZoom = 1; svgPanX = 0; svgPanY = 0;
+  _svgApplyTransform();
+}
+
+// Zoom centered on the middle of the container (used by +/- buttons).
+function zoomSvgBy(factor) {
+  const c = document.getElementById('svgContainer');
+  if (!c) return;
+  const cx = c.clientWidth  / 2;
+  const cy = c.clientHeight / 2;
+  const nz = Math.min(40, Math.max(0.1, svgZoom * factor));
+  svgPanX = cx - (cx - svgPanX) * (nz / svgZoom);
+  svgPanY = cy - (cy - svgPanY) * (nz / svgZoom);
+  svgZoom = nz;
+  _svgApplyTransform();
+}
+
+function _onSvgWheel(e) {
+  e.preventDefault();
+  const rect = e.currentTarget.getBoundingClientRect();
+  const cx   = e.clientX - rect.left;
+  const cy   = e.clientY - rect.top;
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  const nz = Math.min(40, Math.max(0.1, svgZoom * factor));
+  svgPanX = cx - (cx - svgPanX) * (nz / svgZoom);
+  svgPanY = cy - (cy - svgPanY) * (nz / svgZoom);
+  svgZoom = nz;
+  _svgApplyTransform();
+}
+
+function _onSvgMouseDown(e) {
+  if (e.button !== 0) return;
+  _svgDragging = true;
+  _svgDragOriginX = e.clientX; _svgDragOriginY = e.clientY;
+  _svgDragPanX = svgPanX;      _svgDragPanY = svgPanY;
+  e.currentTarget.classList.add('panning');
+}
+
+function _onSvgMouseMove(e) {
+  if (!_svgDragging) return;
+  svgPanX = _svgDragPanX + (e.clientX - _svgDragOriginX);
+  svgPanY = _svgDragPanY + (e.clientY - _svgDragOriginY);
+  _svgApplyTransform();
+}
+
+function _onSvgMouseUp(e) {
+  if (!_svgDragging) return;
+  _svgDragging = false;
+  document.getElementById('svgContainer')?.classList.remove('panning');
+}
+
+// ── SVG ruler ─────────────────────────────────────────────────
+function updateSvgRuler() {
+  const ruler = document.getElementById('svgRuler');
+  const cont  = document.getElementById('svgContainer');
+  if (!ruler || !cont || !svgPhysicalW || cont.style.display === 'none') {
+    if (ruler) ruler.style.display = 'none';
+    return;
+  }
+
+  const dpr = window.devicePixelRatio || 1;
+  const cw  = cont.clientWidth;
+  const lh  = 22; // logical height in css px
+  ruler.width  = Math.round(cw * dpr);
+  ruler.height = Math.round(lh * dpr);
+  ruler.style.width  = cw + 'px';
+  ruler.style.height = lh + 'px';
+  ruler.style.display = 'block';
+
+  const ctx = ruler.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, cw, lh);
+
+  // Background
+  ctx.fillStyle = '#f5f5f5';
+  ctx.fillRect(0, 0, cw, lh);
+  ctx.fillStyle = '#e0e0e0';
+  ctx.fillRect(0, 0, cw, 1); // top border
+
+  // px per mm in container space: SVG renders at 100% of container width, then CSS scale(svgZoom) applied
+  const pxPerMm = cw * svgZoom / svgPhysicalW;
+
+  // mm value at left and right edge of the ruler (accounting for pan)
+  const mmLeft  = -svgPanX / pxPerMm;
+  const mmRight = (cw - svgPanX) / pxPerMm;
+  const mmSpan  = mmRight - mmLeft;
+
+  // Pick the largest nice major interval giving at least 8 major ticks
+  const niceIntervals = [0.5, 1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000];
+  let interval = niceIntervals[niceIntervals.length - 1];
+  for (let j = niceIntervals.length - 1; j >= 0; j--) {
+    if (mmSpan / niceIntervals[j] >= 8) { interval = niceIntervals[j]; break; }
+  }
+
+  // Number of minor subdivisions per major interval (5 gives 4 minor ticks between majors)
+  const minorDiv = (interval % 5 === 0 || interval >= 10) ? 5 : (interval === 2 ? 4 : 2);
+  const minorStep = interval / minorDiv;
+
+  const firstTick = Math.floor(mmLeft / minorStep) * minorStep;
+
+  ctx.strokeStyle = '#90a4ae';
+  ctx.fillStyle   = '#546e7a';
+  ctx.lineWidth   = 1;
+  ctx.font        = '9px system-ui,sans-serif';
+  ctx.textBaseline = 'bottom';
+  ctx.textAlign   = 'center';
+
+  for (let mm = firstTick; mm <= mmRight + minorStep; mm = parseFloat((mm + minorStep).toPrecision(10))) {
+    const x = Math.round(svgPanX + mm * pxPerMm) + 0.5;
+    if (x < -2 || x > cw + 2) continue;
+
+    const isMajor = Math.abs(Math.round(mm / interval) * interval - mm) < minorStep * 0.01;
+    const tickH = isMajor ? 13 : 7;
+
+    ctx.beginPath();
+    ctx.moveTo(x, 1);
+    ctx.lineTo(x, tickH);
+    ctx.stroke();
+
+    // Label on major ticks only
+    if (isMajor && mm >= 0 && x > 10 && x < cw - 10) {
+      const label = Number.isInteger(mm) ? String(mm) : mm.toFixed(1);
+      ctx.fillText(label, x, lh);
+    }
+  }
+
+  // Total figure width label pinned to top-right
+  ctx.textAlign   = 'right';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle   = '#aaaaaa';
+  ctx.fillText(`${svgPhysicalW.toFixed(1)} mm`, cw - 3, 2);
 }
 
 // ── Rendering ─────────────────────────────────────────────────
@@ -518,14 +737,16 @@ function setPreviewDarkMode(dark) {
 
 function renderPreview(data) {
   const container = document.getElementById('svgContainer');
-  let svgStr = data.svgContent
-    .replace(/ width="[^"]*mm"/, '')
-    .replace(/ height="[^"]*mm"/, '');
+  let svgStr = data.svgContent;
+  const wMatch = svgStr.match(/\bwidth="([\d.]+)mm"/);
+  svgPhysicalW = wMatch ? parseFloat(wMatch[1]) : 0;
+  svgStr = svgStr.replace(/ width="[^"]*mm"/, '').replace(/ height="[^"]*mm"/, '');
   if (previewDarkMode) svgStr = applyDarkThemeToSvg(svgStr);
   container.innerHTML = svgStr;
   container.style.background = previewDarkMode ? '#222222' : '';
   container.style.display = '';
   document.getElementById('emptyState').style.display = 'none';
+  _svgApplyTransform();
 }
 
 function renderTable(data) {
@@ -639,7 +860,7 @@ async function downloadPdf() {
   let curY = margin;
 
   const presetIdx = parseInt(document.getElementById('preset').value, 10);
-  const title = isNaN(presetIdx) ? 'Custom Fretboard' : PRESETS[presetIdx].name;
+  const title = isNaN(presetIdx) ? 'Custom Fretboard' : (instrumentPresets[presetIdx]?.name ?? 'Custom Fretboard');
   doc.setFontSize(13);
   doc.setTextColor(2, 119, 189);
   doc.text(title, margin, curY + 5);
@@ -762,7 +983,7 @@ function downloadLayerSvg(mode) {
 
   if (mode === 'inlays') {
     const req = buildRequest();
-    fetch('/api/frets/inlays-sheet', {
+    fetch('/api/fretboard/generate/inlays-only', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
@@ -783,20 +1004,26 @@ function downloadLayerSvg(mode) {
     return;
   }
 
-  // mode === 'frets': strip the inlays group from the full SVG
-  const parser    = new DOMParser();
-  const svgDoc    = parser.parseFromString(lastResponse.svgContent, 'image/svg+xml');
-  const svgEl     = svgDoc.documentElement;
-  const inlaysGrp = svgEl.querySelector('#layer-inlays');
-  if (inlaysGrp) inlaysGrp.parentNode.removeChild(inlaysGrp);
-  const svgStr = new XMLSerializer().serializeToString(svgDoc);
-  const blob   = new Blob([embedConfigInSvg(svgStr)], { type: 'image/svg+xml;charset=utf-8' });
-  const url    = URL.createObjectURL(blob);
-  const a      = document.createElement('a');
-  a.href       = url;
-  a.download   = `fretboard-${scaleDisp}${unitLabel}-frets.svg`;
-  a.click();
-  URL.revokeObjectURL(url);
+  // mode === 'frets': backend regenerates SVG without inlays
+  const req = buildRequest();
+  fetch('/api/fretboard/generate/frets-only', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  }).then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.text();
+  }).then(svgStr => {
+    const blob = new Blob([embedConfigInSvg(svgStr)], { type: 'image/svg+xml;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `fretboard-${scaleDisp}${unitLabel}-frets.svg`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }).catch(() => {
+    M.toast({ html: 'Failed to generate frets SVG.', displayLength: 3000 });
+  });
 }
 
 function setLoading(loading) {
@@ -1133,6 +1360,12 @@ function stateSnapshot() {
     inlayGroupsOpen:      getInlayGroupsState(),
     inlayCustomPath:      customPathPoints,
     inlayCustomClosed:    customPathClosed,
+    multiscale:           document.getElementById('multiscale').checked,
+    bassScaleLength:      toMm(document.getElementById('bassScaleLength').value),
+    trebleScaleLength:    toMm(document.getElementById('trebleScaleLength').value),
+    perpendicularFret:    document.getElementById('perpendicularFret').value,
+    stringPreset:         document.getElementById('stringPreset').value,
+    bridgeStyle:          document.getElementById('bridgeStyle')?.value || 'NONE',
   };
 }
 
@@ -1248,6 +1481,22 @@ function applyStateData(s) {
   chk('showPinholes',    s.showPinholes);
   set('tangWidth',           d(s.tangWidth));
   set('fretExtensionAmount', d(s.fretExtensionAmount));
+
+  if (s.multiscale != null) {
+    chk('multiscale', s.multiscale);
+    document.getElementById('multiscaleEditor').style.display = s.multiscale ? '' : 'none';
+  }
+  set('bassScaleLength',   d(s.bassScaleLength));
+  set('trebleScaleLength', d(s.trebleScaleLength));
+  set('perpendicularFret', s.perpendicularFret);
+  if (s.stringPreset != null) {
+    document.getElementById('stringPreset').value = s.stringPreset;
+    M.FormSelect.init(document.getElementById('stringPreset'));
+  }
+  if (s.bridgeStyle != null) {
+    const bsEl = document.getElementById('bridgeStyle');
+    if (bsEl) bsEl.value = s.bridgeStyle;
+  }
 
   if (typeof s.accordionActive === 'number') {
     const inst = M.Collapsible.getInstance(document.getElementById('inputSections'));
