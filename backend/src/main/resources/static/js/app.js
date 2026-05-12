@@ -24,16 +24,36 @@ let debounceTimer = null;
 let prevUnit = 'mm';
 let previewDarkMode = false;
 
+// ── SVG zoom levels (7 discrete steps, each with its own calibration factor) ──
+const ZOOM_LEVELS = [
+  { zoom: 0.75, calibration: 0.9885, rulerOffsetMm: 17.00, interval: 100, minorStep: 10, mediumAt:   50, labelAt: 100 },
+  { zoom: 1.00, calibration: 0.9885, rulerOffsetMm: 15.00, interval: 100, minorStep: 10, mediumAt:   50, labelAt: 100 },
+  { zoom: 1.50, calibration: 0.9885, rulerOffsetMm: 13.50, interval:  20, minorStep: 10, mediumAt:   15, labelAt:  20 },
+  { zoom: 2.00, calibration: 0.9885, rulerOffsetMm: 12.50, interval:  20, minorStep: 10, mediumAt:   15, labelAt:  20 },
+  { zoom: 3.00, calibration: 0.9891, rulerOffsetMm: 11.60, interval:  10, minorStep:  1, mediumAt:    5, labelAt:  10 },
+  { zoom: 4.00, calibration: 0.9893, rulerOffsetMm: 11.30, interval:  10, minorStep:  1, mediumAt:    5, labelAt:  10 },
+  { zoom: 5.00, calibration: 0.9895, rulerOffsetMm: 11.00, interval:  10, minorStep:  1, mediumAt:    5, labelAt:  10 },
+];
+const ZOOM_DEFAULT_IDX = 1;
+
 // ── SVG preview zoom / pan ────────────────────────────────────
-let svgZoom = 1.0;
+let svgZoomIdx = ZOOM_DEFAULT_IDX;
+let svgZoom = ZOOM_LEVELS[ZOOM_DEFAULT_IDX].zoom;
 let svgPanX = 0;
 let svgPanY = 0;
-let svgPhysicalW = 0; // physical width of current SVG in mm
+let svgPhysicalW = 0;    // physical width of current SVG in mm
+let svgNutOffsetMm = 10; // SVG x-coordinate of the nut (fret 0), in mm
 let _svgDragging = false;
 let _svgDragOriginX = 0;
 let _svgDragOriginY = 0;
 let _svgDragPanX = 0;
 let _svgDragPanY = 0;
+
+// ── Measurement tool ─────────────────────────────────────────
+let measureMode = false;
+let _measureDragging = false;
+let measureStartMm = null; // { x, y } in SVG mm coordinates
+let measureEndMm   = null; // { x, y } in SVG mm coordinates
 
 let currentInlayPresetId = 'circle';
 let inlayPresets         = [];
@@ -177,6 +197,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   svgCont.addEventListener('mousedown', _onSvgMouseDown);
   document.addEventListener('mousemove', _onSvgMouseMove);
   document.addEventListener('mouseup',   _onSvgMouseUp);
+
+  // Measurement canvas events
+  const measureCanvas = document.getElementById('measureCanvas');
+  if (measureCanvas) {
+    measureCanvas.addEventListener('mousedown', _onMeasureMouseDown);
+    measureCanvas.addEventListener('mousemove', _onMeasureMouseMove);
+    measureCanvas.addEventListener('mouseup',   _onMeasureMouseUp);
+  }
 
   saveState();
   calculate();
@@ -523,10 +551,23 @@ function _svgApplyTransform() {
   if (!svg) return;
   svg.style.transform = `translate(${svgPanX}px,${svgPanY}px) scale(${svgZoom})`;
   updateSvgRuler();
+  redrawMeasure();
 }
 
 function resetSvgZoom() {
-  svgZoom = 1; svgPanX = 0; svgPanY = 0;
+  svgZoomIdx = ZOOM_DEFAULT_IDX;
+  svgZoom    = ZOOM_LEVELS[ZOOM_DEFAULT_IDX].zoom;
+  svgPanX = 0; svgPanY = 0;
+  _svgApplyTransform();
+}
+
+function _setZoomLevel(newIdx, cx, cy) {
+  newIdx = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, newIdx));
+  const nz = ZOOM_LEVELS[newIdx].zoom;
+  svgPanX    = cx - (cx - svgPanX) * (nz / svgZoom);
+  svgPanY    = cy - (cy - svgPanY) * (nz / svgZoom);
+  svgZoom    = nz;
+  svgZoomIdx = newIdx;
   _svgApplyTransform();
 }
 
@@ -534,26 +575,13 @@ function resetSvgZoom() {
 function zoomSvgBy(factor) {
   const c = document.getElementById('svgContainer');
   if (!c) return;
-  const cx = c.clientWidth  / 2;
-  const cy = c.clientHeight / 2;
-  const nz = Math.min(40, Math.max(0.1, svgZoom * factor));
-  svgPanX = cx - (cx - svgPanX) * (nz / svgZoom);
-  svgPanY = cy - (cy - svgPanY) * (nz / svgZoom);
-  svgZoom = nz;
-  _svgApplyTransform();
+  _setZoomLevel(svgZoomIdx + (factor > 1 ? 1 : -1), c.clientWidth / 2, c.clientHeight / 2);
 }
 
 function _onSvgWheel(e) {
   e.preventDefault();
   const rect = e.currentTarget.getBoundingClientRect();
-  const cx   = e.clientX - rect.left;
-  const cy   = e.clientY - rect.top;
-  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-  const nz = Math.min(40, Math.max(0.1, svgZoom * factor));
-  svgPanX = cx - (cx - svgPanX) * (nz / svgZoom);
-  svgPanY = cy - (cy - svgPanY) * (nz / svgZoom);
-  svgZoom = nz;
-  _svgApplyTransform();
+  _setZoomLevel(svgZoomIdx + (e.deltaY < 0 ? 1 : -1), e.clientX - rect.left, e.clientY - rect.top);
 }
 
 function _onSvgMouseDown(e) {
@@ -579,9 +607,10 @@ function _onSvgMouseUp(e) {
 
 // ── SVG ruler ─────────────────────────────────────────────────
 function updateSvgRuler() {
-  const ruler = document.getElementById('svgRuler');
-  const cont  = document.getElementById('svgContainer');
-  if (!ruler || !cont || !svgPhysicalW || cont.style.display === 'none') {
+  const ruler   = document.getElementById('svgRuler');
+  const wrapper = document.getElementById('previewWrapper');
+  const cont    = document.getElementById('svgContainer');
+  if (!ruler || !wrapper || !cont || !svgPhysicalW || wrapper.style.display === 'none') {
     if (ruler) ruler.style.display = 'none';
     return;
   }
@@ -605,65 +634,49 @@ function updateSvgRuler() {
   ctx.fillStyle = '#e0e0e0';
   ctx.fillRect(0, 0, cw, 1); // top border
 
-  // px per mm in container space: SVG renders at 100% of container width, then CSS scale(svgZoom) applied
-  const pxPerMm = cw * svgZoom / svgPhysicalW;
-  const calibration = 0.9885; // tweak this
-  const pxPerMmCorrected = pxPerMm * calibration;
+  // px per mm: SVG renders at container width, then CSS scale(svgZoom) is applied
+  const pxPerMm     = cw * svgZoom / svgPhysicalW;
+  const calibration = ZOOM_LEVELS[svgZoomIdx].calibration;
+  const pxPerMmC    = pxPerMm * calibration;
 
-  // mm value at left and right edge of the ruler (accounting for pan)
-  const mmLeft  = -svgPanX / pxPerMm;
-  const mmRight = (cw - svgPanX) / pxPerMm;
+  // Ruler mm=0 is the nut (fret 0). rulerOffsetMm shifts the origin to the nut (per zoom level).
+  const rulerOffsetMm = ZOOM_LEVELS[svgZoomIdx].rulerOffsetMm;
+  const mmLeft  = -svgPanX / pxPerMmC - rulerOffsetMm;
+  const mmRight = (cw - svgPanX) / pxPerMmC - rulerOffsetMm;
   const mmSpan  = mmRight - mmLeft;
 
-  // Pick the largest nice major interval giving at least 8 major ticks
-  const niceIntervals = [1, 10, 50, 100];
-  let interval = niceIntervals[niceIntervals.length - 1];
-  for (let j = niceIntervals.length - 1; j >= 0; j--) {
-    if (mmSpan / niceIntervals[j] >= 8) { interval = niceIntervals[j]; break; }
-  }
-
-  // Number of minor subdivisions per major interval (5 gives 4 minor ticks between majors)
-  const minorDiv = 10;
-  const minorStep = Math.max(interval / minorDiv, 1);
-
+  const { interval, minorStep, mediumAt, labelAt } = ZOOM_LEVELS[svgZoomIdx];
   const firstTick = Math.floor(mmLeft / minorStep) * minorStep;
 
-  ctx.strokeStyle = '#90a4ae';
-  ctx.fillStyle   = '#546e7a';
-  ctx.lineWidth   = 1;
-  ctx.font        = '9px system-ui,sans-serif';
+  ctx.strokeStyle  = '#90a4ae';
+  ctx.fillStyle    = '#546e7a';
+  ctx.lineWidth    = 1;
+  ctx.font         = '9px system-ui,sans-serif';
   ctx.textBaseline = 'bottom';
-  ctx.textAlign   = 'center';
+  ctx.textAlign    = 'center';
 
   for (let mm = firstTick; mm <= mmRight + minorStep; mm = parseFloat((mm + minorStep).toPrecision(10))) {
-    const rulerOffsetMm = 10.45;
-    const x = Math.round(svgPanX + (mm+rulerOffsetMm) * pxPerMmCorrected) + 0.5;
+    const x = Math.round(svgPanX + (rulerOffsetMm + mm) * pxPerMmC) + 0.5;
     if (x < -2 || x > cw + 2) continue;
 
-    const isMajor = Math.abs(Math.round(mm / interval) * interval - mm) < minorStep * 0.01;
-    const isMedium =
-        Math.abs(Math.round(mm / 5) * 5 - mm) < minorStep * 0.01;
+    const isMajor  = Math.abs(Math.round(mm / interval) * interval - mm) < minorStep * 0.01;
+    const isMedium = mediumAt !== null && Math.abs(Math.round(mm / mediumAt) * mediumAt - mm) < minorStep * 0.01;
+    const tickH    = isMajor ? 13 : isMedium ? 10 : 7;
+    const isNeg    = mm < 0;
 
-    const tickH =
-        isMajor ? 13 :
-            isMedium ? 10 :
-                7;
-
-    const isNegative = mm < 0;
-
-    ctx.strokeStyle = isNegative ? '#cfcfcf' : '#90a4ae';
-    ctx.fillStyle   = isNegative ? '#cfcfcf' : '#546e7a';
-
-    const is100mm = Math.abs(mm % 100) < minorStep * 0.01;
-    ctx.font = is100mm ? 'bold 9px system-ui,sans-serif' : '9px system-ui,sans-serif';
+    ctx.strokeStyle = isNeg ? '#cfcfcf' : '#90a4ae';
+    ctx.fillStyle   = isNeg ? '#cfcfcf' : '#546e7a';
+    ctx.font = (Math.abs(mm % 100) < minorStep * 0.01)
+      ? 'bold 9px system-ui,sans-serif'
+      : '9px system-ui,sans-serif';
 
     ctx.beginPath();
     ctx.moveTo(x, 1);
     ctx.lineTo(x, tickH);
     ctx.stroke();
 
-    // Label on major ticks only
-    if (isMajor && mm >= 0 && x > 10 && x < cw - 10) {
+    const isLabel = Math.abs(Math.round(mm / labelAt) * labelAt - mm) < minorStep * 0.01;
+    if (isLabel && mm >= 0 && x > 10 && x < cw - 10) {
       const label = Number.isInteger(mm) ? String(mm) : mm.toFixed(1);
       ctx.fillText(label, x, lh);
     }
@@ -748,14 +761,19 @@ function setPreviewDarkMode(dark) {
 
 function renderPreview(data) {
   const container = document.getElementById('svgContainer');
+  const wrapper   = document.getElementById('previewWrapper');
   let svgStr = data.svgContent;
   const wMatch = svgStr.match(/\bwidth="([\d.]+)mm"/);
-  svgPhysicalW = wMatch ? parseFloat(wMatch[1]) : 0;
+  svgPhysicalW     = wMatch ? parseFloat(wMatch[1]) : 0;
+  svgNutOffsetMm   = data.nutOffsetMm ?? 10.0;
+  measureStartMm   = null;
+  measureEndMm     = null;
+  _measureDragging = false;
   svgStr = svgStr.replace(/ width="[^"]*mm"/, '').replace(/ height="[^"]*mm"/, '');
   if (previewDarkMode) svgStr = applyDarkThemeToSvg(svgStr);
   container.innerHTML = svgStr;
   container.style.background = previewDarkMode ? '#222222' : '';
-  container.style.display = '';
+  wrapper.style.display = '';
   document.getElementById('emptyState').style.display = 'none';
   _svgApplyTransform();
 }
@@ -1527,4 +1545,155 @@ function applyStateData(s) {
       if (icon) icon.style.transform = open ? 'rotate(0deg)' : 'rotate(-90deg)';
     });
   }
+}
+
+// ── Measurement tool ──────────────────────────────────────────
+
+function toggleMeasureMode() {
+  measureMode = !measureMode;
+  if (!measureMode) {
+    measureStartMm = null;
+    measureEndMm   = null;
+    _measureDragging = false;
+    redrawMeasure();
+  }
+  const btn     = document.getElementById('measureBtn');
+  const canvas  = document.getElementById('measureCanvas');
+  const wrapper = document.getElementById('previewWrapper');
+  btn?.classList.toggle('preview-mode-active', measureMode);
+  if (canvas) canvas.style.pointerEvents = measureMode ? 'auto' : 'none';
+  if (wrapper) wrapper.style.cursor = measureMode ? 'crosshair' : '';
+}
+
+function _screenToSvgMm(screenX, screenY, cw) {
+  const pxPerMmC = cw * svgZoom / svgPhysicalW * 0.9885;
+  return {
+    x: (screenX - svgPanX) / pxPerMmC,
+    y: (screenY - svgPanY) / pxPerMmC,
+  };
+}
+
+function _svgMmToScreen(svgX, svgY, pxPerMmC) {
+  return {
+    x: svgPanX + svgX * pxPerMmC,
+    y: svgPanY + svgY * pxPerMmC,
+  };
+}
+
+function _onMeasureMouseDown(e) {
+  if (!measureMode || !svgPhysicalW) return;
+  const canvas = document.getElementById('measureCanvas');
+  if (!canvas) return;
+  const cw   = canvas.clientWidth;
+  const rect = canvas.getBoundingClientRect();
+  measureStartMm   = _screenToSvgMm(e.clientX - rect.left, e.clientY - rect.top, cw);
+  measureEndMm     = null;
+  _measureDragging = true;
+  redrawMeasure();
+}
+
+function _onMeasureMouseMove(e) {
+  if (!measureMode || !_measureDragging || !svgPhysicalW) return;
+  const canvas = document.getElementById('measureCanvas');
+  if (!canvas) return;
+  const cw   = canvas.clientWidth;
+  const rect = canvas.getBoundingClientRect();
+  measureEndMm = _screenToSvgMm(e.clientX - rect.left, e.clientY - rect.top, cw);
+  redrawMeasure();
+}
+
+function _onMeasureMouseUp(e) {
+  if (!measureMode || !_measureDragging || !svgPhysicalW) return;
+  const canvas = document.getElementById('measureCanvas');
+  if (!canvas) return;
+  const cw   = canvas.clientWidth;
+  const rect = canvas.getBoundingClientRect();
+  measureEndMm     = _screenToSvgMm(e.clientX - rect.left, e.clientY - rect.top, cw);
+  _measureDragging = false;
+  redrawMeasure();
+}
+
+function redrawMeasure() {
+  const canvas = document.getElementById('measureCanvas');
+  const cont   = document.getElementById('svgContainer');
+  if (!canvas || !cont) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const cw  = cont.clientWidth;
+  const ch  = cont.clientHeight;
+  canvas.width  = Math.round(cw * dpr);
+  canvas.height = Math.round(ch * dpr);
+  canvas.style.width  = cw + 'px';
+  canvas.style.height = ch + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, cw, ch);
+
+  if (!measureStartMm || !measureEndMm || !svgPhysicalW) return;
+
+  const pxPerMmC = cw * svgZoom / svgPhysicalW * 0.9885;
+  const p1 = _svgMmToScreen(measureStartMm.x, measureStartMm.y, pxPerMmC);
+  const p2 = _svgMmToScreen(measureEndMm.x,   measureEndMm.y,   pxPerMmC);
+
+  const dx_mm   = measureEndMm.x - measureStartMm.x;
+  const dy_mm   = measureEndMm.y - measureStartMm.y;
+  const dist_mm = Math.sqrt(dx_mm * dx_mm + dy_mm * dy_mm);
+
+  // Dashed measurement line
+  ctx.beginPath();
+  ctx.moveTo(p1.x, p1.y);
+  ctx.lineTo(p2.x, p2.y);
+  ctx.strokeStyle = '#e65100';
+  ctx.lineWidth   = 1.5;
+  ctx.setLineDash([5, 3]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // End-point dots
+  [p1, p2].forEach(pt => {
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#e65100';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth   = 1;
+    ctx.stroke();
+  });
+
+  // Label at midpoint
+  const midX  = (p1.x + p2.x) / 2;
+  const midY  = (p1.y + p2.y) / 2;
+  const label = dist_mm.toFixed(2) + ' mm';
+  ctx.font = 'bold 11px system-ui,sans-serif';
+  const tw  = ctx.measureText(label).width;
+  const pad = 5;
+  const bx  = midX - tw / 2 - pad;
+  const by  = midY - 10 - pad;
+  const bw  = tw + pad * 2;
+  const bh  = 14 + pad * 2;
+  const br  = 4;
+
+  // Rounded rect background
+  ctx.beginPath();
+  ctx.moveTo(bx + br, by);
+  ctx.lineTo(bx + bw - br, by);
+  ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + br);
+  ctx.lineTo(bx + bw, by + bh - br);
+  ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - br, by + bh);
+  ctx.lineTo(bx + br, by + bh);
+  ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - br);
+  ctx.lineTo(bx, by + br);
+  ctx.quadraticCurveTo(bx, by, bx + br, by);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255,255,255,0.93)';
+  ctx.fill();
+  ctx.strokeStyle = '#e65100';
+  ctx.lineWidth   = 1;
+  ctx.stroke();
+
+  ctx.fillStyle    = '#bf360c';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, midX, midY - 3);
 }

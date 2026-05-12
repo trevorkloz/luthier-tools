@@ -5,4 +5,5 @@ data class FretResponse(
     val svgContent: String,
     val unit: Unit,
     val scaleLength: Double,
+    val nutOffsetMm: Double,
 )

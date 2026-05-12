@@ -103,9 +103,11 @@
 
     /* ── Preview card ────────────────────────────────────────── */
     .preview-card { margin-bottom: 16px; }
+    #previewWrapper { position: relative; }
     #svgContainer { overflow: hidden; cursor: grab; user-select: none; touch-action: none; }
     #svgContainer.panning { cursor: grabbing; }
     #svgContainer svg { width: 100%; height: auto; display: block; transform-origin: 0 0; }
+    #measureCanvas { position: absolute; top: 0; left: 0; pointer-events: none; }
 
     /* ── Preview light/dark toggle buttons ───────────────────── */
     .preview-theme-btn {
@@ -698,13 +700,21 @@
                     class="preview-theme-btn" title="Dark background — ebony/rosewood style">
               <i class="material-icons" style="font-size:14px;line-height:1">nights_stay</i>Dark
             </button>
+            <div style="width:1px;height:18px;background:#e0e0e0;margin:0 2px"></div>
+            <button id="measureBtn" onclick="toggleMeasureMode()" type="button"
+                    class="preview-theme-btn" title="Measure tool — click and drag to measure a distance in mm">
+              <i class="material-icons" style="font-size:14px;line-height:1">straighten</i>Measure
+            </button>
           </div>
         </div>
 
         <div id="progressBar" class="progress light-blue lighten-4" style="display:none">
           <div class="indeterminate light-blue darken-1"></div>
         </div>
-        <div id="svgContainer" style="display:none"></div>
+        <div id="previewWrapper" style="display:none">
+          <div id="svgContainer"></div>
+          <canvas id="measureCanvas"></canvas>
+        </div>
         <canvas id="svgRuler" style="display:none;height:22px;image-rendering:crisp-edges"></canvas>
         <div id="emptyState" style="text-align:center;padding:32px 0">
           <i class="material-icons" style="font-size:56px;color:#b3e5fc">straighten</i>
@@ -737,7 +747,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script th:src="@{/js/custom-path-editor.js(v=11)}"></script>
-<script th:src="@{/js/app.js(v=31)}"></script>
+<script th:src="@{/js/app.js(v=32)}"></script>
 
 </body>
 </html>

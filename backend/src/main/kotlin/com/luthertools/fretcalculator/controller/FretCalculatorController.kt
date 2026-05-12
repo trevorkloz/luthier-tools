@@ -8,6 +8,7 @@ import com.luthertools.fretcalculator.model.InstrumentPreset
 import com.luthertools.fretcalculator.model.RadiusPreset
 import com.luthertools.fretcalculator.model.StringPreset
 import com.luthertools.fretcalculator.service.FretCalculatorService
+import com.luthertools.fretcalculator.service.SVG_MARGIN_H
 import com.luthertools.fretcalculator.service.SvgGeneratorService
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -49,12 +50,15 @@ class FretCalculatorController(
     @PostMapping("/generate")
     fun generate(@RequestBody request: FretRequest): ResponseEntity<FretResponse> {
         val (positions, svg) = generateFretboardSvg(request)
+        val nutSlotW = if (request.showNutSlot) request.nutSlotWidth else 0.0
+        val nutOffsetMm = maxOf(SVG_MARGIN_H, nutSlotW - request.nutSlotDistance + 2.0)
         return ResponseEntity.ok(
             FretResponse(
                 fretPositions = positions,
                 svgContent = svg,
                 unit = request.unit,
                 scaleLength = request.scaleLength,
+                nutOffsetMm = nutOffsetMm,
             )
         )
     }
